@@ -1,0 +1,165 @@
+{
+  "config": {
+    "sweep": {
+      "k_values": [
+        2,
+        4
+      ],
+      "sigma": 1.0,
+      "p": 0.7
+    },
+    "env": {
+      "dt": 0.02,
+      "max_steps": 500,
+      "capture_radius": 0.03,
+      "target_radius": 0.1,
+      "target_pos": [
+        0.5,
+        0.5
+      ],
+      "v_attacker": 1.0,
+      "defender_inner_radius": 0.15,
+      "defender_outer_radius": 0.35,
+      "attacker_danger_radius": 0.15,
+      "attacker_shaping": 0.01,
+      "defender_shaping": 0.01
+    },
+    "training": {
+      "attacker_warmup_iters": 8,
+      "central_defender_iters": 8,
+      "snapshot_fractions": [
+        0.5,
+        1.0
+      ],
+      "attacker_hidden": 64,
+      "attacker_n_layers": 2,
+      "central_hidden": 64,
+      "central_n_layers": 2,
+      "n_envs": 64,
+      "n_steps": 32,
+      "n_epochs": 2,
+      "minibatch_size": 128,
+      "lr": 0.0003,
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "clip_coef": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "max_grad_norm": 0.5
+    },
+    "evaluation": {
+      "n_episodes": 200,
+      "n_animations": 1
+    },
+    "mode": "rl",
+    "seed": 0
+  },
+  "cells": [
+    {
+      "cell_id": 0,
+      "k": 2,
+      "sigma": 1.0,
+      "p": 0.7,
+      "eval_main": {
+        "k": 2,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 200,
+        "attacker_success_rate": 0.02500000037252903,
+        "ci_95": [
+          0.004999999888241291,
+          0.05000000074505806
+        ],
+        "mean_episode_length": 465.805,
+        "n_attacker_wins": 5,
+        "n_capture": 16,
+        "n_timeout": 179
+      },
+      "eval_attacker_vs_heuristic_def": {
+        "k": 2,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 200,
+        "attacker_success_rate": 0.0,
+        "ci_95": [
+          0.0,
+          0.0
+        ],
+        "mean_episode_length": 25.11,
+        "n_attacker_wins": 0,
+        "n_capture": 200,
+        "n_timeout": 0
+      },
+      "eval_heuristic_att_vs_cdef": {
+        "k": 2,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 200,
+        "attacker_success_rate": 0.9900000095367432,
+        "ci_95": [
+          0.9750000238418579,
+          1.0
+        ],
+        "mean_episode_length": 24.205,
+        "n_attacker_wins": 198,
+        "n_capture": 2,
+        "n_timeout": 0
+      },
+      "train_seconds": 1.7809588749951217,
+      "log_path": "outputs_central_smoke/checkpoints/k2_sigma1.0_p0.7/train.log"
+    },
+    {
+      "cell_id": 1,
+      "k": 4,
+      "sigma": 1.0,
+      "p": 0.7,
+      "eval_main": {
+        "k": 4,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 200,
+        "attacker_success_rate": 0.05000000074505806,
+        "ci_95": [
+          0.019999999552965164,
+          0.08500000089406967
+        ],
+        "mean_episode_length": 275.71,
+        "n_attacker_wins": 10,
+        "n_capture": 157,
+        "n_timeout": 33
+      },
+      "eval_attacker_vs_heuristic_def": {
+        "k": 4,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 200,
+        "attacker_success_rate": 0.0,
+        "ci_95": [
+          0.0,
+          0.0
+        ],
+        "mean_episode_length": 19.95,
+        "n_attacker_wins": 0,
+        "n_capture": 200,
+        "n_timeout": 0
+      },
+      "eval_heuristic_att_vs_cdef": {
+        "k": 4,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 200,
+        "attacker_success_rate": 0.9900000095367432,
+        "ci_95": [
+          0.9750000238418579,
+          1.0
+        ],
+        "mean_episode_length": 24.385,
+        "n_attacker_wins": 198,
+        "n_capture": 2,
+        "n_timeout": 0
+      },
+      "train_seconds": 0.7434325840004021,
+      "log_path": "outputs_central_smoke/checkpoints/k4_sigma1.0_p0.7/train.log"
+    }
+  ]
+}

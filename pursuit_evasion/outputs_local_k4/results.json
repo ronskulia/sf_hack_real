@@ -1,0 +1,1478 @@
+{
+  "config": {
+    "sweep": {
+      "k_values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "sigma": 1.0,
+      "p": 0.7
+    },
+    "env": {
+      "dt": 0.02,
+      "max_steps": 500,
+      "capture_radius": 0.03,
+      "target_radius": 0.1,
+      "target_pos": [
+        0.5,
+        0.5
+      ],
+      "v_attacker": 1.0,
+      "defender_inner_radius": 0.15,
+      "defender_outer_radius": 0.35,
+      "attacker_danger_radius": 0.15,
+      "attacker_shaping": 0.01,
+      "defender_shaping": 0.01
+    },
+    "training": {
+      "attacker_warmup_iters": 50,
+      "attacker_iters": 100,
+      "defender_iters": 100,
+      "n_alternations": 3,
+      "n_envs": 256,
+      "n_steps": 128,
+      "n_epochs": 4,
+      "minibatch_size": 512,
+      "lr": 0.0003,
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "clip_coef": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "max_grad_norm": 0.5
+    },
+    "evaluation": {
+      "n_episodes": 2000,
+      "n_animations": 3
+    },
+    "mode": "rl",
+    "seed": 0
+  },
+  "git": {
+    "commit": "f60e6a380eb40237ba02936272b32804713aa859",
+    "branch": "main",
+    "dirty": true,
+    "dirty_files": [
+      "ursuit_evasion/scripts/run_central.py",
+      "pursuit_evasion/scripts/run_experiment.py",
+      "pursuit_evasion/src/train.py",
+      ".claude/",
+      "pursuit_evasion/config_local_k4.yaml",
+      "pursuit_evasion/outputs_central_smoke/",
+      "pursuit_evasion/outputs_local_k4/",
+      "pursuit_evasion/outputs_local_k4_stdout.log",
+      "pursuit_evasion/outputs_remote/",
+      "pursuit_evasion/outputs_remote_deep/",
+      "pursuit_evasion/outputs_remote_long_s07/",
+      "pursuit_evasion/outputs_remote_long_s10/",
+      "pursuit_evasion/outputs_remote_long_s13/",
+      "pursuit_evasion/outputs_remote_quick/",
+      "pursuit_evasion/outputs_remote_s045_p09/",
+      "pursuit_evasion/outputs_remote_s13_p04/",
+      "tmp_rl_k1_sigma1.0_p0.7_ep0_last.png",
+      "tmp_rl_k2_sigma1.0_p0.7_ep0_last.png",
+      "tmp_rl_k3_sigma1.0_p0.7_ep0_last.png",
+      "tmp_rl_k4_sigma1.0_p0.7_ep0_last.png",
+      "tmp_rl_k5_sigma1.0_p0.7_ep0_last.png",
+      "tmp_rl_k6_sigma1.0_p0.7_ep0_last.png"
+    ]
+  },
+  "heuristic": [
+    {
+      "k": 1,
+      "sigma": 1.0,
+      "p": 0.7,
+      "n_episodes": 2000,
+      "attacker_success_rate": 0.26249998807907104,
+      "ci_95": [
+        0.24300000071525574,
+        0.2809999883174896
+      ],
+      "mean_episode_length": 19.219,
+      "n_attacker_wins": 525,
+      "n_capture": 1475,
+      "n_timeout": 0
+    },
+    {
+      "k": 2,
+      "sigma": 1.0,
+      "p": 0.7,
+      "n_episodes": 2000,
+      "attacker_success_rate": 0.10450000315904617,
+      "ci_95": [
+        0.09099999815225601,
+        0.1185000017285347
+      ],
+      "mean_episode_length": 16.63,
+      "n_attacker_wins": 209,
+      "n_capture": 1791,
+      "n_timeout": 0
+    },
+    {
+      "k": 3,
+      "sigma": 1.0,
+      "p": 0.7,
+      "n_episodes": 2000,
+      "attacker_success_rate": 0.04600000008940697,
+      "ci_95": [
+        0.03700000047683716,
+        0.05550000071525574
+      ],
+      "mean_episode_length": 14.751,
+      "n_attacker_wins": 92,
+      "n_capture": 1908,
+      "n_timeout": 0
+    },
+    {
+      "k": 4,
+      "sigma": 1.0,
+      "p": 0.7,
+      "n_episodes": 2000,
+      "attacker_success_rate": 0.025499999523162842,
+      "ci_95": [
+        0.01850000023841858,
+        0.03200000151991844
+      ],
+      "mean_episode_length": 13.6095,
+      "n_attacker_wins": 51,
+      "n_capture": 1949,
+      "n_timeout": 0
+    }
+  ],
+  "rl": [
+    {
+      "cell_id": 0,
+      "k": 1,
+      "sigma": 1.0,
+      "p": 0.7,
+      "eval": {
+        "k": 1,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.24199999868869781,
+        "ci_95": [
+          0.22298750467598438,
+          0.2605000138282776
+        ],
+        "mean_episode_length": 24.4755,
+        "n_attacker_wins": 484,
+        "n_capture": 1516,
+        "n_timeout": 0
+      },
+      "train_seconds": 626.1280055420066,
+      "log_path": "outputs_local_k4/checkpoints/k1_sigma1.0_p0.7/train.log",
+      "training_info": {
+        "method": "alternating_train",
+        "seed": 0,
+        "n_envs": 256,
+        "ppo_config": {
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "env_kwargs": {
+          "dt": 0.02,
+          "max_steps": 500,
+          "capture_radius": 0.03,
+          "target_radius": 0.1,
+          "target_pos": [
+            0.5,
+            0.5
+          ],
+          "v_attacker": 1.0,
+          "inner_radius": 0.15,
+          "outer_radius": 0.35,
+          "shaping": 0.01
+        },
+        "training_cfg": {
+          "attacker_warmup_iters": 50,
+          "attacker_iters": 100,
+          "defender_iters": 100,
+          "n_alternations": 3,
+          "n_envs": 256,
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "schedule": {
+          "method": "alternating_train",
+          "k": 1,
+          "sigma": 1.0,
+          "p": 0.7,
+          "seed": 0,
+          "n_envs": 256,
+          "n_steps": 128,
+          "attacker_warmup_iters": 50,
+          "defender_iters": 100,
+          "attacker_iters": 100,
+          "n_alternations": 3,
+          "phases": [
+            {
+              "name": "warmup",
+              "trainee": "neural_attacker",
+              "opponent": "HeuristicDefender",
+              "n_iters": 50
+            },
+            {
+              "name": "round_1_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_1_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            }
+          ],
+          "totals": {
+            "attacker_iters": 350,
+            "defender_iters": 300,
+            "env_steps_per_iter": 32768,
+            "total_env_steps": 21299200
+          }
+        },
+        "phase_summaries": [
+          {
+            "name": "warmup",
+            "n": 50,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1954120127616903,
+              "ep_length": 35.47538860103627,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0019381304455237114,
+              "value_loss": 0.029133762189303525,
+              "entropy": 2.850978769361973,
+              "fps": 26321.712738702594,
+              "n_eps": 772
+            },
+            "last": {
+              "iter": 49,
+              "step": 1638400,
+              "ep_return": -1.204275470042067,
+              "ep_length": 39.18168168168168,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0002571951981735765,
+              "value_loss": 0.00038140674348596804,
+              "entropy": 2.835257942788303,
+              "fps": 31463.32163756929,
+              "n_eps": 666
+            }
+          },
+          {
+            "name": "round_1_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.0217919722927036,
+              "ep_length": 78.79885057471265,
+              "defender_succ": 0.14367816091954022,
+              "policy_loss": -0.0035263498948552296,
+              "value_loss": 0.016135575195221463,
+              "entropy": 2.837593882344663,
+              "fps": 41575.90588581662,
+              "n_eps": 174
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.8961199961422954,
+              "ep_length": 40.12954186413902,
+              "defender_succ": 1.0,
+              "policy_loss": 2.5082737010961864e-05,
+              "value_loss": 0.0009439638538424333,
+              "entropy": 1.9191177296452224,
+              "fps": 44724.21108234276,
+              "n_eps": 633
+            }
+          },
+          {
+            "name": "round_1_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.2642256865512969,
+              "ep_length": 48.65570599613153,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.000404955548219732,
+              "value_loss": 0.00035881454778063926,
+              "entropy": 2.831398705020547,
+              "fps": 32862.752912322794,
+              "n_eps": 517
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.8476884903987043,
+              "ep_length": 25.256920415224915,
+              "attacker_succ": 0.9645328719723183,
+              "policy_loss": -1.4023738003743347e-05,
+              "value_loss": 0.0137390466134093,
+              "entropy": 3.1503493851050735,
+              "fps": 33108.09951732405,
+              "n_eps": 1156
+            }
+          },
+          {
+            "name": "round_2_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.040987352665207,
+              "ep_length": 27.75165876777251,
+              "defender_succ": 0.035071090047393366,
+              "policy_loss": 0.0002455168796586804,
+              "value_loss": 0.051199810703110415,
+              "entropy": 1.908667877316475,
+              "fps": 42901.69258496715,
+              "n_eps": 1055
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.899568430554052,
+              "ep_length": 18.40623091020159,
+              "defender_succ": 0.9755650580329872,
+              "policy_loss": 0.0018863049754145322,
+              "value_loss": 0.01773439512544428,
+              "entropy": 1.4415123644284904,
+              "fps": 37759.854041344435,
+              "n_eps": 1637
+            }
+          },
+          {
+            "name": "round_2_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.0298507357901936,
+              "ep_length": 19.72650130548303,
+              "attacker_succ": 0.024804177545691905,
+              "policy_loss": 0.00014347012620419264,
+              "value_loss": 0.09960073263209779,
+              "entropy": 3.1576184909790754,
+              "fps": 28437.561320496734,
+              "n_eps": 1532
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -0.01878242271645184,
+              "ep_length": 25.371352785145888,
+              "attacker_succ": 0.5340406719717065,
+              "policy_loss": -0.00040260663809021935,
+              "value_loss": 0.05904857302084565,
+              "entropy": 2.41708492487669,
+              "fps": 26926.431865409417,
+              "n_eps": 1131
+            }
+          },
+          {
+            "name": "round_3_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -0.03831048937522561,
+              "ep_length": 27.86314760508309,
+              "defender_succ": 0.5141739980449658,
+              "policy_loss": 0.003374900644303125,
+              "value_loss": 0.08003988779091742,
+              "entropy": 1.4492286248132586,
+              "fps": 39776.636753408115,
+              "n_eps": 1023
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.8781534975429581,
+              "ep_length": 19.591890124264225,
+              "defender_succ": 0.9659908436886854,
+              "policy_loss": 0.0023202097127068555,
+              "value_loss": 0.02144686952669872,
+              "entropy": 1.4745919462293386,
+              "fps": 39948.614396233585,
+              "n_eps": 1529
+            }
+          },
+          {
+            "name": "round_3_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.0243654263405988,
+              "ep_length": 21.333333333333332,
+              "attacker_succ": 0.030626780626780627,
+              "policy_loss": 0.0004189328947177273,
+              "value_loss": 0.04324813943821937,
+              "entropy": 2.420737946406007,
+              "fps": 32629.30372818116,
+              "n_eps": 1404
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -0.6946814665796912,
+              "ep_length": 21.313454545454544,
+              "attacker_succ": 0.19490909090909092,
+              "policy_loss": 0.0009685307209110761,
+              "value_loss": 0.07176925854582805,
+              "entropy": 2.3454164192080498,
+              "fps": 29713.684544766566,
+              "n_eps": 1375
+            }
+          }
+        ],
+        "metrics_path": "outputs_local_k4/checkpoints/k1_sigma1.0_p0.7/metrics.json"
+      }
+    },
+    {
+      "cell_id": 1,
+      "k": 2,
+      "sigma": 1.0,
+      "p": 0.7,
+      "eval": {
+        "k": 2,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.0024999999441206455,
+        "ci_95": [
+          0.0005000000237487257,
+          0.004999999888241291
+        ],
+        "mean_episode_length": 27.7745,
+        "n_attacker_wins": 5,
+        "n_capture": 1995,
+        "n_timeout": 0
+      },
+      "train_seconds": 826.7325260829966,
+      "log_path": "outputs_local_k4/checkpoints/k2_sigma1.0_p0.7/train.log",
+      "training_info": {
+        "method": "alternating_train",
+        "seed": 0,
+        "n_envs": 256,
+        "ppo_config": {
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "env_kwargs": {
+          "dt": 0.02,
+          "max_steps": 500,
+          "capture_radius": 0.03,
+          "target_radius": 0.1,
+          "target_pos": [
+            0.5,
+            0.5
+          ],
+          "v_attacker": 1.0,
+          "inner_radius": 0.15,
+          "outer_radius": 0.35,
+          "shaping": 0.01
+        },
+        "training_cfg": {
+          "attacker_warmup_iters": 50,
+          "attacker_iters": 100,
+          "defender_iters": 100,
+          "n_alternations": 3,
+          "n_envs": 256,
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "schedule": {
+          "method": "alternating_train",
+          "k": 2,
+          "sigma": 1.0,
+          "p": 0.7,
+          "seed": 0,
+          "n_envs": 256,
+          "n_steps": 128,
+          "attacker_warmup_iters": 50,
+          "defender_iters": 100,
+          "attacker_iters": 100,
+          "n_alternations": 3,
+          "phases": [
+            {
+              "name": "warmup",
+              "trainee": "neural_attacker",
+              "opponent": "HeuristicDefender",
+              "n_iters": 50
+            },
+            {
+              "name": "round_1_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_1_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            }
+          ],
+          "totals": {
+            "attacker_iters": 350,
+            "defender_iters": 300,
+            "env_steps_per_iter": 32768,
+            "total_env_steps": 21299200
+          }
+        },
+        "phase_summaries": [
+          {
+            "name": "warmup",
+            "n": 50,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1607323182952471,
+              "ep_length": 29.02836879432624,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.002278092171309254,
+              "value_loss": 0.0321002253840561,
+              "entropy": 2.8452838705852628,
+              "fps": 24928.573376365646,
+              "n_eps": 987
+            },
+            "last": {
+              "iter": 49,
+              "step": 1638400,
+              "ep_return": -1.191060198512273,
+              "ep_length": 34.170483460559794,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0011180011465512507,
+              "value_loss": 0.00038326413175582275,
+              "entropy": 3.0518345842137933,
+              "fps": 29594.56803300549,
+              "n_eps": 786
+            }
+          },
+          {
+            "name": "round_1_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -0.5038147786610768,
+              "ep_length": 65.00571428571429,
+              "defender_succ": 0.33714285714285713,
+              "policy_loss": -0.002624001514959673,
+              "value_loss": 0.02588543965248391,
+              "entropy": 2.8441591314040124,
+              "fps": 25555.622063325674,
+              "n_eps": 175
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9233993240950668,
+              "ep_length": 34.59214092140921,
+              "defender_succ": 1.0,
+              "policy_loss": 0.00022164705478644464,
+              "value_loss": 0.0029921201512479456,
+              "entropy": 2.515407934319228,
+              "fps": 24423.3240695166,
+              "n_eps": 738
+            }
+          },
+          {
+            "name": "round_1_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.2221437304740914,
+              "ep_length": 38.24122807017544,
+              "attacker_succ": 0.0,
+              "policy_loss": 0.0005042853181294049,
+              "value_loss": 0.00040730169280323025,
+              "entropy": 3.047435147687793,
+              "fps": 24419.819994928006,
+              "n_eps": 684
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.6030274159973266,
+              "ep_length": 27.187262357414447,
+              "attacker_succ": 0.846958174904943,
+              "policy_loss": 0.000284394243863062,
+              "value_loss": 0.04802725031186128,
+              "entropy": 3.226470621302724,
+              "fps": 25996.439465135063,
+              "n_eps": 1052
+            }
+          },
+          {
+            "name": "round_2_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -0.7202230243337666,
+              "ep_length": 30.623003194888177,
+              "defender_succ": 0.1810436634717785,
+              "policy_loss": 0.000205352309421869,
+              "value_loss": 0.05866655639692908,
+              "entropy": 2.518678522668779,
+              "fps": 20324.825773182176,
+              "n_eps": 939
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9463015320179927,
+              "ep_length": 18.0035799522673,
+              "defender_succ": 0.9940334128878282,
+              "policy_loss": 0.0007054323555166775,
+              "value_loss": 0.005295249812888869,
+              "entropy": 2.685006328858435,
+              "fps": 22634.68819362122,
+              "n_eps": 1676
+            }
+          },
+          {
+            "name": "round_2_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.0774684770139928,
+              "ep_length": 19.193897012078832,
+              "attacker_succ": 0.003178639542275906,
+              "policy_loss": -0.0004001379816145345,
+              "value_loss": 0.06001375558844302,
+              "entropy": 3.2377014327794313,
+              "fps": 26787.464222018516,
+              "n_eps": 1573
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -0.3767851839802741,
+              "ep_length": 26.0626204238921,
+              "attacker_succ": 0.3603082851637765,
+              "policy_loss": 0.0005415079422164126,
+              "value_loss": 0.0646766638092231,
+              "entropy": 2.2747149877250195,
+              "fps": 26068.35608439015,
+              "n_eps": 1038
+            }
+          },
+          {
+            "name": "round_3_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": 0.35981144584245334,
+              "ep_length": 27.404150197628457,
+              "defender_succ": 0.7055335968379447,
+              "policy_loss": 0.0015479993994631513,
+              "value_loss": 0.0612495722816675,
+              "entropy": 2.691067649051547,
+              "fps": 22220.355532134265,
+              "n_eps": 1012
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9412647904293029,
+              "ep_length": 18.45740740740741,
+              "defender_succ": 0.9925925925925926,
+              "policy_loss": 0.0012482018032642372,
+              "value_loss": 0.006735523629458839,
+              "entropy": 3.6429068045690656,
+              "fps": 24373.015547455667,
+              "n_eps": 1620
+            }
+          },
+          {
+            "name": "round_3_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.072856134019078,
+              "ep_length": 19.633597883597883,
+              "attacker_succ": 0.007275132275132275,
+              "policy_loss": 0.0004358729465820943,
+              "value_loss": 0.023262725881068036,
+              "entropy": 2.275313872843981,
+              "fps": 30370.439796772946,
+              "n_eps": 1512
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -1.100707290545943,
+              "ep_length": 25.092140921409214,
+              "attacker_succ": 0.011743450767841012,
+              "policy_loss": 0.0003669949419418117,
+              "value_loss": 0.006038038418864744,
+              "entropy": 2.2738083293661475,
+              "fps": 31144.932702473398,
+              "n_eps": 1107
+            }
+          }
+        ],
+        "metrics_path": "outputs_local_k4/checkpoints/k2_sigma1.0_p0.7/metrics.json"
+      }
+    },
+    {
+      "cell_id": 2,
+      "k": 3,
+      "sigma": 1.0,
+      "p": 0.7,
+      "eval": {
+        "k": 3,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.1875,
+        "ci_95": [
+          0.1704999953508377,
+          0.2045000046491623
+        ],
+        "mean_episode_length": 34.1845,
+        "n_attacker_wins": 375,
+        "n_capture": 1625,
+        "n_timeout": 0
+      },
+      "train_seconds": 983.9482010829961,
+      "log_path": "outputs_local_k4/checkpoints/k3_sigma1.0_p0.7/train.log",
+      "training_info": {
+        "method": "alternating_train",
+        "seed": 0,
+        "n_envs": 256,
+        "ppo_config": {
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "env_kwargs": {
+          "dt": 0.02,
+          "max_steps": 500,
+          "capture_radius": 0.03,
+          "target_radius": 0.1,
+          "target_pos": [
+            0.5,
+            0.5
+          ],
+          "v_attacker": 1.0,
+          "inner_radius": 0.15,
+          "outer_radius": 0.35,
+          "shaping": 0.01
+        },
+        "training_cfg": {
+          "attacker_warmup_iters": 50,
+          "attacker_iters": 100,
+          "defender_iters": 100,
+          "n_alternations": 3,
+          "n_envs": 256,
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "schedule": {
+          "method": "alternating_train",
+          "k": 3,
+          "sigma": 1.0,
+          "p": 0.7,
+          "seed": 0,
+          "n_envs": 256,
+          "n_steps": 128,
+          "attacker_warmup_iters": 50,
+          "defender_iters": 100,
+          "attacker_iters": 100,
+          "n_alternations": 3,
+          "phases": [
+            {
+              "name": "warmup",
+              "trainee": "neural_attacker",
+              "opponent": "HeuristicDefender",
+              "n_iters": 50
+            },
+            {
+              "name": "round_1_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_1_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            }
+          ],
+          "totals": {
+            "attacker_iters": 350,
+            "defender_iters": 300,
+            "env_steps_per_iter": 32768,
+            "total_env_steps": 21299200
+          }
+        },
+        "phase_summaries": [
+          {
+            "name": "warmup",
+            "n": 50,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.141352070830844,
+              "ep_length": 25.450877192982457,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0023721852030575974,
+              "value_loss": 0.039606201244168915,
+              "entropy": 2.847696387208998,
+              "fps": 25017.944332153562,
+              "n_eps": 1140
+            },
+            "last": {
+              "iter": 49,
+              "step": 1638400,
+              "ep_return": -1.1662771267655396,
+              "ep_length": 28.314459049544993,
+              "attacker_succ": 0.0,
+              "policy_loss": 0.00013480111283570295,
+              "value_loss": 0.00021510139418978724,
+              "entropy": 3.4472741577774286,
+              "fps": 28480.62022961347,
+              "n_eps": 989
+            }
+          },
+          {
+            "name": "round_1_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -0.3372090200380146,
+              "ep_length": 74.75824175824175,
+              "defender_succ": 0.4230769230769231,
+              "policy_loss": -0.0009581934014022409,
+              "value_loss": 0.025823167758062482,
+              "entropy": 2.852521435978512,
+              "fps": 17460.030784138784,
+              "n_eps": 182
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9423533192448418,
+              "ep_length": 28.161838161838162,
+              "defender_succ": 1.0,
+              "policy_loss": -0.0002653758983797161,
+              "value_loss": 0.0020409191026071007,
+              "entropy": 2.6247846825669208,
+              "fps": 16904.53664242843,
+              "n_eps": 1001
+            }
+          },
+          {
+            "name": "round_1_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1893990957506144,
+              "ep_length": 31.91618160651921,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0005888020668862737,
+              "value_loss": 0.0002669173653657708,
+              "entropy": 3.4501615688204765,
+              "fps": 24628.93913510243,
+              "n_eps": 859
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.24951660539628936,
+              "ep_length": 27.989,
+              "attacker_succ": 0.678,
+              "policy_loss": -0.00042717683231785486,
+              "value_loss": 0.07416266949439887,
+              "entropy": 3.1107183462008834,
+              "fps": 22456.398337067316,
+              "n_eps": 1000
+            }
+          },
+          {
+            "name": "round_2_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -0.3779965096725614,
+              "ep_length": 30.959385290889134,
+              "defender_succ": 0.3446761800219539,
+              "policy_loss": 0.0004218892451414528,
+              "value_loss": 0.07099716626786783,
+              "entropy": 2.630495475915571,
+              "fps": 16454.35264146012,
+              "n_eps": 911
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9615458787861765,
+              "ep_length": 17.34732604945371,
+              "defender_succ": 1.0,
+              "policy_loss": 1.6559212023518437e-05,
+              "value_loss": 0.0008277144245312229,
+              "entropy": 3.09247954779615,
+              "fps": 16483.210089207438,
+              "n_eps": 1739
+            }
+          },
+          {
+            "name": "round_2_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.0895464989900199,
+              "ep_length": 18.16776119402985,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0009008837896544719,
+              "value_loss": 0.03454516368219629,
+              "entropy": 3.1207759035751224,
+              "fps": 25202.765198828627,
+              "n_eps": 1675
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -1.2151042212633758,
+              "ep_length": 44.329577464788734,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0009610339116079558,
+              "value_loss": 0.0022404035075851425,
+              "entropy": 2.5132244005799294,
+              "fps": 27719.569158783215,
+              "n_eps": 355
+            }
+          },
+          {
+            "name": "round_3_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": 0.9156272167022002,
+              "ep_length": 47.0032154340836,
+              "defender_succ": 0.9903536977491961,
+              "policy_loss": -0.0002079508043001018,
+              "value_loss": 0.003399953283709086,
+              "entropy": 3.08699065229545,
+              "fps": 19120.083097793133,
+              "n_eps": 311
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9534167294556641,
+              "ep_length": 22.310397553516818,
+              "defender_succ": 1.0,
+              "policy_loss": -0.00013415629806938037,
+              "value_loss": 0.0013624921025439107,
+              "entropy": 2.844245370787879,
+              "fps": 19831.59074531816,
+              "n_eps": 1308
+            }
+          },
+          {
+            "name": "round_3_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1276339742059422,
+              "ep_length": 24.271369294605808,
+              "attacker_succ": 0.0,
+              "policy_loss": 0.00014236644801712828,
+              "value_loss": 0.0016819371612655232,
+              "entropy": 2.5045404387637973,
+              "fps": 29360.595255139193,
+              "n_eps": 1205
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -0.910339610753969,
+              "ep_length": 29.1,
+              "attacker_succ": 0.11444444444444445,
+              "policy_loss": 1.2168948160251603e-06,
+              "value_loss": 0.026829523460037308,
+              "entropy": 2.4152236990630627,
+              "fps": 31688.745076677176,
+              "n_eps": 900
+            }
+          }
+        ],
+        "metrics_path": "outputs_local_k4/checkpoints/k3_sigma1.0_p0.7/metrics.json"
+      }
+    },
+    {
+      "cell_id": 3,
+      "k": 4,
+      "sigma": 1.0,
+      "p": 0.7,
+      "eval": {
+        "k": 4,
+        "sigma": 1.0,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.20749999582767487,
+        "ci_95": [
+          0.19050000607967377,
+          0.2240000069141388
+        ],
+        "mean_episode_length": 28.0185,
+        "n_attacker_wins": 415,
+        "n_capture": 1585,
+        "n_timeout": 0
+      },
+      "train_seconds": 1147.805390583002,
+      "log_path": "outputs_local_k4/checkpoints/k4_sigma1.0_p0.7/train.log",
+      "training_info": {
+        "method": "alternating_train",
+        "seed": 0,
+        "n_envs": 256,
+        "ppo_config": {
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "env_kwargs": {
+          "dt": 0.02,
+          "max_steps": 500,
+          "capture_radius": 0.03,
+          "target_radius": 0.1,
+          "target_pos": [
+            0.5,
+            0.5
+          ],
+          "v_attacker": 1.0,
+          "inner_radius": 0.15,
+          "outer_radius": 0.35,
+          "shaping": 0.01
+        },
+        "training_cfg": {
+          "attacker_warmup_iters": 50,
+          "attacker_iters": 100,
+          "defender_iters": 100,
+          "n_alternations": 3,
+          "n_envs": 256,
+          "n_steps": 128,
+          "n_epochs": 4,
+          "minibatch_size": 512,
+          "lr": 0.0003,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "clip_coef": 0.2,
+          "ent_coef": 0.01,
+          "vf_coef": 0.5,
+          "max_grad_norm": 0.5
+        },
+        "schedule": {
+          "method": "alternating_train",
+          "k": 4,
+          "sigma": 1.0,
+          "p": 0.7,
+          "seed": 0,
+          "n_envs": 256,
+          "n_steps": 128,
+          "attacker_warmup_iters": 50,
+          "defender_iters": 100,
+          "attacker_iters": 100,
+          "n_alternations": 3,
+          "phases": [
+            {
+              "name": "warmup",
+              "trainee": "neural_attacker",
+              "opponent": "HeuristicDefender",
+              "n_iters": 50
+            },
+            {
+              "name": "round_1_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_1_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_2_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_defender",
+              "trainee": "neural_defender",
+              "opponent": "frozen_neural_attacker",
+              "n_iters": 100
+            },
+            {
+              "name": "round_3_attacker",
+              "trainee": "neural_attacker",
+              "opponent": "frozen_neural_defender",
+              "n_iters": 100
+            }
+          ],
+          "totals": {
+            "attacker_iters": 350,
+            "defender_iters": 300,
+            "env_steps_per_iter": 32768,
+            "total_env_steps": 21299200
+          }
+        },
+        "phase_summaries": [
+          {
+            "name": "warmup",
+            "n": 50,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1331275646676386,
+              "ep_length": 23.92051905920519,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0015143536238610977,
+              "value_loss": 0.036586209083907306,
+              "entropy": 2.846232358366251,
+              "fps": 25430.987406085897,
+              "n_eps": 1233
+            },
+            "last": {
+              "iter": 49,
+              "step": 1638400,
+              "ep_return": -1.1524888683175185,
+              "ep_length": 26.02633969118983,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.000800691743279458,
+              "value_loss": 0.00020848890738989212,
+              "entropy": 3.519750946201384,
+              "fps": 27686.56428228457,
+              "n_eps": 1101
+            }
+          },
+          {
+            "name": "round_1_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": 0.06124327517514441,
+              "ep_length": 73.54782608695652,
+              "defender_succ": 0.6086956521739131,
+              "policy_loss": -0.001660575883306592,
+              "value_loss": 0.018549182004790055,
+              "entropy": 2.8511702055111527,
+              "fps": 13105.988786481763,
+              "n_eps": 115
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.953813985486404,
+              "ep_length": 23.65827922077922,
+              "defender_succ": 1.0,
+              "policy_loss": -0.00018666543769541022,
+              "value_loss": 0.0012992320184821438,
+              "entropy": 2.778941098600626,
+              "fps": 12689.116786967044,
+              "n_eps": 1232
+            }
+          },
+          {
+            "name": "round_1_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1542701354347726,
+              "ep_length": 26.034265103697024,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0015253498731908621,
+              "value_loss": 0.00018506849750110632,
+              "entropy": 3.5201596533879638,
+              "fps": 20965.95982748743,
+              "n_eps": 1109
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.6091171319765472,
+              "ep_length": 40.62305295950156,
+              "attacker_succ": 0.8847352024922118,
+              "policy_loss": -9.152127131528687e-05,
+              "value_loss": 0.02004500912153162,
+              "entropy": 3.027796406298876,
+              "fps": 21507.899371327836,
+              "n_eps": 642
+            }
+          },
+          {
+            "name": "round_2_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -0.7095835389995233,
+              "ep_length": 48.39393939393939,
+              "defender_succ": 0.1889483065953654,
+              "policy_loss": 0.0003763632489608426,
+              "value_loss": 0.046505149783115485,
+              "entropy": 2.797082925681025,
+              "fps": 12203.304114862387,
+              "n_eps": 561
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.9685570381384202,
+              "ep_length": 15.60030627871363,
+              "defender_succ": 1.0,
+              "policy_loss": 0.0003543732399293731,
+              "value_loss": 0.0007156144675377618,
+              "entropy": 2.8929783096536994,
+              "fps": 13225.273502708753,
+              "n_eps": 1959
+            }
+          },
+          {
+            "name": "round_2_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.0854328064943397,
+              "ep_length": 16.66538882803943,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.00021739910516771488,
+              "value_loss": 0.04393002550932579,
+              "entropy": 3.0356524912640452,
+              "fps": 25394.969527329937,
+              "n_eps": 1826
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -1.1331174124333956,
+              "ep_length": 22.758215962441316,
+              "attacker_succ": 0.0,
+              "policy_loss": -0.0007103022435330786,
+              "value_loss": 0.00017599612539243026,
+              "entropy": 3.251996573060751,
+              "fps": 26211.80304820964,
+              "n_eps": 1278
+            }
+          },
+          {
+            "name": "round_3_defender",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": 0.949956873252424,
+              "ep_length": 25.843416370106763,
+              "defender_succ": 1.0,
+              "policy_loss": 2.2380208520189626e-05,
+              "value_loss": 0.0012343708403932396,
+              "entropy": 2.8918742875102907,
+              "fps": 15577.0386472293,
+              "n_eps": 1124
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": 0.962204074373615,
+              "ep_length": 19.25582901554404,
+              "defender_succ": 1.0,
+              "policy_loss": -0.0003129825283849641,
+              "value_loss": 0.001535103337118926,
+              "entropy": 3.0291266939602792,
+              "fps": 16481.46560183363,
+              "n_eps": 1544
+            }
+          },
+          {
+            "name": "round_3_attacker",
+            "n": 100,
+            "first": {
+              "iter": 0,
+              "step": 32768,
+              "ep_return": -1.1118635433027684,
+              "ep_length": 20.804792107117688,
+              "attacker_succ": 0.0,
+              "policy_loss": -9.72603620539303e-05,
+              "value_loss": 0.0003343814688605562,
+              "entropy": 3.253024712204933,
+              "fps": 29150.872310967425,
+              "n_eps": 1419
+            },
+            "last": {
+              "iter": 99,
+              "step": 3276800,
+              "ep_return": -0.7482295987294226,
+              "ep_length": 24.430313588850176,
+              "attacker_succ": 0.18554006968641115,
+              "policy_loss": -0.0026126080365429516,
+              "value_loss": 0.03878389937017346,
+              "entropy": 3.2872939566150308,
+              "fps": 31083.88199537965,
+              "n_eps": 1148
+            }
+          }
+        ],
+        "metrics_path": "outputs_local_k4/checkpoints/k4_sigma1.0_p0.7/metrics.json"
+      }
+    }
+  ]
+}

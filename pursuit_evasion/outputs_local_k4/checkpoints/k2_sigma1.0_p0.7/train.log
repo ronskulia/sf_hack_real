@@ -1,0 +1,86 @@
+=== alternating_train  k=2 sigma=1.0 p=0.7  warmup=50 alt=3x(def=100, att=100)  B=256 T=128 ===
+[phase 0] attacker warmup vs heuristic defender
+  [att it=  0 step=  32768] ret=-1.161 len= 29.0 succ=0.000 pl=-0.0023 vl=0.0321 H=+2.845 fps=24929
+  [att it= 10 step= 360448] ret=-1.162 len= 28.5 succ=0.000 pl=-0.0009 vl=0.0002 H=+3.048 fps=24971
+  [att it= 20 step= 688128] ret=-1.166 len= 28.7 succ=0.000 pl=-0.0007 vl=0.0002 H=+3.231 fps=27013
+  [att it= 30 step=1015808] ret=-1.175 len= 30.6 succ=0.000 pl=-0.0014 vl=0.0002 H=+3.280 fps=28492
+  [att it= 40 step=1343488] ret=-1.180 len= 31.8 succ=0.000 pl=-0.0011 vl=0.0003 H=+3.187 fps=29243
+  [att it= 49 step=1638400] ret=-1.191 len= 34.2 succ=0.000 pl=-0.0011 vl=0.0004 H=+3.052 fps=29595
+[round 1/3 A] train defender
+  [def it=  0 step=  32768] ret=-0.504 len= 65.0 d_succ=0.337 pl=-0.0026 vl=0.0259 H=+2.844 fps=25556
+  [def it= 10 step= 360448] ret=+0.695 len= 57.0 d_succ=0.914 pl=-0.0018 vl=0.0146 H=+2.875 fps=25194
+  [def it= 20 step= 688128] ret=+0.778 len= 46.3 d_succ=0.944 pl=-0.0003 vl=0.0076 H=+2.801 fps=24793
+  [def it= 30 step=1015808] ret=+0.779 len= 42.8 d_succ=0.939 pl=-0.0006 vl=0.0067 H=+2.744 fps=24328
+  [def it= 40 step=1343488] ret=+0.844 len= 42.1 d_succ=0.969 pl=-0.0003 vl=0.0057 H=+2.735 fps=24231
+  [def it= 50 step=1671168] ret=+0.882 len= 41.8 d_succ=0.988 pl=-0.0001 vl=0.0046 H=+2.661 fps=24233
+  [def it= 60 step=1998848] ret=+0.909 len= 41.4 d_succ=0.998 pl=-0.0002 vl=0.0040 H=+2.609 fps=24323
+  [def it= 70 step=2326528] ret=+0.915 len= 38.6 d_succ=0.998 pl=-0.0004 vl=0.0039 H=+2.582 fps=24294
+  [def it= 80 step=2654208] ret=+0.923 len= 35.8 d_succ=1.000 pl=-0.0003 vl=0.0034 H=+2.541 fps=24316
+  [def it= 90 step=2981888] ret=+0.926 len= 34.4 d_succ=1.000 pl=+0.0001 vl=0.0030 H=+2.516 fps=24368
+  [def it= 99 step=3276800] ret=+0.923 len= 34.6 d_succ=1.000 pl=+0.0002 vl=0.0030 H=+2.515 fps=24423
+[round 1/3 B] train attacker
+  [att it=  0 step=  32768] ret=-1.222 len= 38.2 succ=0.000 pl=+0.0005 vl=0.0004 H=+3.047 fps=24420
+  [att it= 10 step= 360448] ret=-1.206 len= 36.2 succ=0.000 pl=-0.0017 vl=0.0007 H=+3.131 fps=28877
+  [att it= 20 step= 688128] ret=-1.169 len= 43.1 succ=0.027 pl=-0.0015 vl=0.0035 H=+3.181 fps=28640
+  [att it= 30 step=1015808] ret=-0.613 len= 50.0 succ=0.095 pl=-0.0007 vl=0.0053 H=+3.280 fps=28844
+  [att it= 40 step=1343488] ret=-0.049 len= 48.3 succ=0.458 pl=-0.0017 vl=0.0122 H=+3.291 fps=28853
+  [att it= 50 step=1671168] ret=+0.450 len= 38.5 succ=0.784 pl=-0.0037 vl=0.0297 H=+3.228 fps=28392
+  [att it= 60 step=1998848] ret=+0.539 len= 33.4 succ=0.826 pl=-0.0003 vl=0.0391 H=+3.168 fps=27786
+  [att it= 70 step=2326528] ret=+0.574 len= 29.5 succ=0.836 pl=+0.0001 vl=0.0450 H=+3.181 fps=27270
+  [att it= 80 step=2654208] ret=+0.573 len= 27.7 succ=0.833 pl=-0.0001 vl=0.0492 H=+3.191 fps=26924
+  [att it= 90 step=2981888] ret=+0.608 len= 27.9 succ=0.851 pl=-0.0001 vl=0.0451 H=+3.188 fps=26468
+  [att it= 99 step=3276800] ret=+0.603 len= 27.2 succ=0.847 pl=+0.0003 vl=0.0480 H=+3.226 fps=25996
+[round 2/3 A] train defender
+  [def it=  0 step=  32768] ret=-0.720 len= 30.6 d_succ=0.181 pl=+0.0002 vl=0.0587 H=+2.519 fps=20325
+  [def it= 10 step= 360448] ret=-0.629 len= 27.1 d_succ=0.218 pl=-0.0001 vl=0.0676 H=+2.516 fps=22254
+  [def it= 20 step= 688128] ret=-0.179 len= 29.6 d_succ=0.441 pl=-0.0004 vl=0.0932 H=+2.550 fps=22338
+  [def it= 30 step=1015808] ret=+0.194 len= 28.0 d_succ=0.624 pl=-0.0005 vl=0.0900 H=+2.532 fps=22399
+  [def it= 40 step=1343488] ret=+0.498 len= 26.9 d_succ=0.775 pl=-0.0001 vl=0.0705 H=+2.507 fps=22589
+  [def it= 50 step=1671168] ret=+0.689 len= 24.0 d_succ=0.868 pl=+0.0001 vl=0.0550 H=+2.481 fps=22549
+  [def it= 60 step=1998848] ret=+0.844 len= 21.4 d_succ=0.944 pl=+0.0006 vl=0.0343 H=+2.459 fps=22530
+  [def it= 70 step=2326528] ret=+0.898 len= 19.6 d_succ=0.970 pl=+0.0009 vl=0.0208 H=+2.459 fps=22574
+  [def it= 80 step=2654208] ret=+0.935 len= 18.9 d_succ=0.989 pl=+0.0011 vl=0.0091 H=+2.516 fps=22680
+  [def it= 90 step=2981888] ret=+0.940 len= 18.2 d_succ=0.991 pl=+0.0021 vl=0.0076 H=+2.621 fps=22732
+  [def it= 99 step=3276800] ret=+0.946 len= 18.0 d_succ=0.994 pl=+0.0007 vl=0.0053 H=+2.685 fps=22635
+[round 2/3 B] train attacker
+  [att it=  0 step=  32768] ret=-1.077 len= 19.2 succ=0.003 pl=-0.0004 vl=0.0600 H=+3.238 fps=26787
+  [att it= 10 step= 360448] ret=-1.043 len= 19.0 succ=0.020 pl=-0.0015 vl=0.0148 H=+3.224 fps=26332
+  [att it= 20 step= 688128] ret=-0.961 len= 19.9 succ=0.062 pl=-0.0014 vl=0.0370 H=+3.031 fps=25884
+  [att it= 30 step=1015808] ret=-0.824 len= 20.7 succ=0.130 pl=-0.0009 vl=0.0624 H=+2.874 fps=26065
+  [att it= 40 step=1343488] ret=-0.750 len= 21.1 succ=0.167 pl=+0.0004 vl=0.0688 H=+2.789 fps=26109
+  [att it= 50 step=1671168] ret=-0.688 len= 21.5 succ=0.198 pl=+0.0004 vl=0.0731 H=+2.709 fps=25824
+  [att it= 60 step=1998848] ret=-0.598 len= 22.5 succ=0.244 pl=+0.0000 vl=0.0709 H=+2.594 fps=25816
+  [att it= 70 step=2326528] ret=-0.566 len= 23.6 succ=0.263 pl=-0.0002 vl=0.0771 H=+2.523 fps=25914
+  [att it= 80 step=2654208] ret=-0.456 len= 25.0 succ=0.320 pl=+0.0000 vl=0.0658 H=+2.442 fps=25999
+  [att it= 90 step=2981888] ret=-0.357 len= 26.0 succ=0.371 pl=-0.0000 vl=0.0684 H=+2.340 fps=26020
+  [att it= 99 step=3276800] ret=-0.377 len= 26.1 succ=0.360 pl=+0.0005 vl=0.0647 H=+2.275 fps=26068
+[round 3/3 A] train defender
+  [def it=  0 step=  32768] ret=+0.360 len= 27.4 d_succ=0.706 pl=+0.0015 vl=0.0612 H=+2.691 fps=22220
+  [def it= 10 step= 360448] ret=+0.914 len= 20.1 d_succ=0.979 pl=+0.0008 vl=0.0162 H=+2.537 fps=22711
+  [def it= 20 step= 688128] ret=+0.925 len= 19.0 d_succ=0.984 pl=+0.0007 vl=0.0130 H=+2.617 fps=22603
+  [def it= 30 step=1015808] ret=+0.928 len= 19.1 d_succ=0.986 pl=+0.0011 vl=0.0104 H=+2.729 fps=22806
+  [def it= 40 step=1343488] ret=+0.924 len= 18.9 d_succ=0.983 pl=+0.0017 vl=0.0124 H=+2.746 fps=23273
+  [def it= 50 step=1671168] ret=+0.936 len= 18.5 d_succ=0.989 pl=+0.0010 vl=0.0086 H=+2.882 fps=23659
+  [def it= 60 step=1998848] ret=+0.941 len= 18.8 d_succ=0.992 pl=+0.0010 vl=0.0069 H=+3.030 fps=23901
+  [def it= 70 step=2326528] ret=+0.948 len= 18.8 d_succ=0.996 pl=+0.0010 vl=0.0038 H=+3.170 fps=24043
+  [def it= 80 step=2654208] ret=+0.945 len= 18.5 d_succ=0.994 pl=+0.0009 vl=0.0046 H=+3.346 fps=24201
+  [def it= 90 step=2981888] ret=+0.945 len= 18.4 d_succ=0.994 pl=+0.0009 vl=0.0045 H=+3.496 fps=24273
+  [def it= 99 step=3276800] ret=+0.941 len= 18.5 d_succ=0.993 pl=+0.0012 vl=0.0067 H=+3.643 fps=24373
+[round 3/3 B] train attacker
+  [att it=  0 step=  32768] ret=-1.073 len= 19.6 succ=0.007 pl=+0.0004 vl=0.0233 H=+2.275 fps=30370
+  [att it= 10 step= 360448] ret=-1.059 len= 18.8 succ=0.012 pl=+0.0008 vl=0.0102 H=+2.271 fps=31252
+  [att it= 20 step= 688128] ret=-1.063 len= 18.5 succ=0.010 pl=-0.0001 vl=0.0077 H=+2.256 fps=30852
+  [att it= 30 step=1015808] ret=-1.063 len= 18.8 succ=0.011 pl=+0.0009 vl=0.0073 H=+2.245 fps=30905
+  [att it= 40 step=1343488] ret=-1.049 len= 19.1 succ=0.018 pl=+0.0020 vl=0.0120 H=+2.216 fps=30756
+  [att it= 50 step=1671168] ret=-1.058 len= 19.8 succ=0.015 pl=+0.0006 vl=0.0097 H=+2.203 fps=30868
+  [att it= 60 step=1998848] ret=-1.058 len= 20.2 succ=0.017 pl=+0.0006 vl=0.0111 H=+2.177 fps=30962
+  [att it= 70 step=2326528] ret=-1.069 len= 20.4 succ=0.013 pl=+0.0011 vl=0.0085 H=+2.205 fps=31049
+  [att it= 80 step=2654208] ret=-1.059 len= 21.3 succ=0.020 pl=+0.0004 vl=0.0108 H=+2.199 fps=31067
+  [att it= 90 step=2981888] ret=-1.087 len= 23.1 succ=0.012 pl=+0.0004 vl=0.0067 H=+2.228 fps=31135
+  [att it= 99 step=3276800] ret=-1.101 len= 25.1 succ=0.012 pl=+0.0004 vl=0.0060 H=+2.274 fps=31145
+saved checkpoints → outputs_local_k4/checkpoints/k2_sigma1.0_p0.7
+train_elapsed=826.7s
+eval={'k': 2, 'sigma': 1.0, 'p': 0.7, 'n_episodes': 2000, 'attacker_success_rate': 0.0024999999441206455, 'ci_95': (0.0005000000237487257, 0.004999999888241291), 'mean_episode_length': 27.7745, 'n_attacker_wins': 5, 'n_capture': 1995, 'n_timeout': 0}
+saved anim → rl_k2_sigma1.0_p0.7_ep0.mp4 (20 steps, outcome=2)
+saved anim → rl_k2_sigma1.0_p0.7_ep1.mp4 (15 steps, outcome=2)
+saved anim → rl_k2_sigma1.0_p0.7_ep2.mp4 (12 steps, outcome=2)

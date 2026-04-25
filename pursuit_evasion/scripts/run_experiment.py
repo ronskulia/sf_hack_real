@@ -21,8 +21,10 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import subprocess
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -173,6 +175,37 @@ def _rl_cell(args: tuple) -> dict:
     log_path = cell_dir / "train.log"
     log_path.write_text("\n".join(log_lines))
 
+    metrics_path = cell_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(_jsonable(res["metrics"]), indent=2))
+
+    phase_summaries: list[dict] = []
+    warmup_ms = res["metrics"].get("warmup") or []
+    if warmup_ms:
+        phase_summaries.append({
+            "name": "warmup", "n": len(warmup_ms),
+            "first": warmup_ms[0], "last": warmup_ms[-1],
+        })
+    for ri, rd in enumerate(res["metrics"].get("rounds", [])):
+        for side in ("defender", "attacker"):
+            ms = rd.get(side) or []
+            if ms:
+                phase_summaries.append({
+                    "name": f"round_{ri+1}_{side}", "n": len(ms),
+                    "first": ms[0], "last": ms[-1],
+                })
+
+    training_info = {
+        "method": "alternating_train",
+        "seed": seed,
+        "n_envs": training_cfg["n_envs"],
+        "ppo_config": asdict(cfg),
+        "env_kwargs": env_kwargs,
+        "training_cfg": dict(training_cfg),
+        "schedule": res.get("schedule"),
+        "phase_summaries": phase_summaries,
+        "metrics_path": str(metrics_path),
+    }
+
     return {
         "cell_id": cell_id,
         "k": k,
@@ -181,6 +214,7 @@ def _rl_cell(args: tuple) -> dict:
         "eval": eval_res,
         "train_seconds": train_elapsed,
         "log_path": str(log_path),
+        "training_info": training_info,
     }
 
 
@@ -304,6 +338,7 @@ def main() -> None:
     out_json = out_root / "results.json"
     out_json.write_text(json.dumps({
         "config": config,
+        "git": _git_info(_REPO_ROOT),
         "heuristic": [_jsonable(r) for r in heuristic_results],
         "rl": [_jsonable(r) for r in rl_results],
     }, indent=2))
@@ -312,17 +347,34 @@ def main() -> None:
 
 def _jsonable(r):
     """Make a result dict JSON-friendly (tuples → lists)."""
-    out = {}
-    for k, v in r.items():
-        if isinstance(v, tuple):
-            out[k] = list(v)
-        elif isinstance(v, dict):
-            out[k] = _jsonable(v)
-        elif isinstance(v, np.ndarray):
-            out[k] = v.tolist()
-        else:
-            out[k] = v
-    return out
+    if isinstance(r, dict):
+        return {k: _jsonable(v) for k, v in r.items()}
+    if isinstance(r, (list, tuple)):
+        return [_jsonable(v) for v in r]
+    if isinstance(r, np.ndarray):
+        return r.tolist()
+    if isinstance(r, (np.floating, np.integer)):
+        return r.item()
+    return r
+
+
+def _git_info(repo_root: Path) -> dict:
+    """Capture commit/branch/dirty status so saved results pin the code version."""
+    def _run(*args: str) -> str:
+        try:
+            return subprocess.check_output(
+                ["git", "-C", str(repo_root), *args],
+                text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            return ""
+    status = _run("status", "--porcelain")
+    return {
+        "commit": _run("rev-parse", "HEAD"),
+        "branch": _run("rev-parse", "--abbrev-ref", "HEAD"),
+        "dirty": bool(status),
+        "dirty_files": [line[3:] for line in status.splitlines() if line.strip()],
+    }
 
 
 def _save_curve_from_results(results, sigmas, ps, *, out, title,

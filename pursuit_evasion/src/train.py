@@ -570,11 +570,54 @@ def alternating_train(
         torch.save(defender_net.state_dict(), save_dir / "defender.pt")
         log_fn(f"saved checkpoints → {save_dir}")
 
+    phases: list[dict] = [
+        {
+            "name": "warmup",
+            "trainee": "neural_attacker",
+            "opponent": "HeuristicDefender",
+            "n_iters": attacker_warmup_iters,
+        }
+    ]
+    for r in range(n_alternations):
+        phases.append({
+            "name": f"round_{r+1}_defender",
+            "trainee": "neural_defender",
+            "opponent": "frozen_neural_attacker",
+            "n_iters": defender_iters,
+        })
+        phases.append({
+            "name": f"round_{r+1}_attacker",
+            "trainee": "neural_attacker",
+            "opponent": "frozen_neural_defender",
+            "n_iters": attacker_iters,
+        })
+    env_steps_per_iter = n_envs * cfg.n_steps
+    total_iters = (
+        attacker_warmup_iters + n_alternations * (attacker_iters + defender_iters)
+    )
+    schedule = {
+        "method": "alternating_train",
+        "k": k, "sigma": sigma, "p": p, "seed": seed,
+        "n_envs": n_envs, "n_steps": cfg.n_steps,
+        "attacker_warmup_iters": attacker_warmup_iters,
+        "defender_iters": defender_iters,
+        "attacker_iters": attacker_iters,
+        "n_alternations": n_alternations,
+        "phases": phases,
+        "totals": {
+            "attacker_iters": attacker_warmup_iters + n_alternations * attacker_iters,
+            "defender_iters": n_alternations * defender_iters,
+            "env_steps_per_iter": env_steps_per_iter,
+            "total_env_steps": total_iters * env_steps_per_iter,
+        },
+    }
+
     return {
         "attacker_net": attacker_net,
         "defender_net": defender_net,
         "metrics": all_metrics,
         "env_meta": env.metadata(),
+        "schedule": schedule,
     }
 
 
@@ -956,10 +999,55 @@ def sequential_train(
             torch.save(sd, save_dir / f"attacker_snapshot_{i}.pt")
         log_fn(f"saved checkpoints → {save_dir}")
 
+    pop_desc = ["HeuristicAttacker"]
+    for i in range(len(snapshots)):
+        pop_desc.append(f"NeuralAttacker(snapshot={i}, deterministic=True)")
+    if snapshots:
+        pop_desc.append(
+            f"NeuralAttacker(snapshot={len(snapshots)-1}, deterministic=False)"
+        )
+    env_steps_per_iter = n_envs * cfg.n_steps
+    total_iters = attacker_warmup_iters + central_defender_iters
+    schedule = {
+        "method": "sequential_train",
+        "k": k, "sigma": sigma, "p": p, "seed": seed,
+        "n_envs": n_envs, "n_steps": cfg.n_steps,
+        "attacker_warmup_iters": attacker_warmup_iters,
+        "central_defender_iters": central_defender_iters,
+        "snapshot_fractions": list(snapshot_fractions),
+        "snapshot_iters": snap_iters,
+        "snapshot_count": len(snapshots),
+        "phases": [
+            {
+                "name": "phase_A_attacker_warmup",
+                "trainee": "neural_attacker",
+                "opponent": "HeuristicDefender",
+                "n_iters": attacker_warmup_iters,
+                "snapshot_iters": snap_iters,
+            },
+            {
+                "name": "phase_B_central_defender",
+                "trainee": "central_defender",
+                "opponent": f"PopulationAttacker(size={len(pop_policies)})",
+                "n_iters": central_defender_iters,
+                "population_composition": pop_desc,
+            },
+        ],
+        "attacker_arch": {"hidden": attacker_hidden, "n_layers": attacker_n_layers},
+        "central_defender_arch": {"hidden": central_hidden, "n_layers": central_n_layers},
+        "totals": {
+            "attacker_iters": attacker_warmup_iters,
+            "central_defender_iters": central_defender_iters,
+            "env_steps_per_iter": env_steps_per_iter,
+            "total_env_steps": total_iters * env_steps_per_iter,
+        },
+    }
+
     return {
         "attacker_net": attacker_net,
         "central_defender_net": central_defender_net,
         "snapshots": snapshots,
         "metrics": {"attacker": a_log["metrics"], "central_defender": cd_log["metrics"]},
         "env_meta": env_a.metadata(),
+        "schedule": schedule,
     }

@@ -1,0 +1,17 @@
+=== sequential_train  k=2 sigma=1.0 p=0.7  warmup=8 cdef=8  att_arch=64x2 cdef_arch=64x2  B=64 ===
+[phase A] attacker (bigger MLP) vs heuristic defender
+  [att it=  0 step=   2048] ret=-1.114 len= 20.7 succ=0.000 pl=-0.0016 vl=0.0913 H=+2.842 fps=13491
+  [att it=  3] snapshot saved (#1)
+  [att it=  7 step=  16384] ret=-1.081 len= 14.6 succ=0.000 pl=-0.0036 vl=0.0035 H=+2.874 fps=38570
+  [att it=  7] snapshot saved (#2)
+[phase A] saved 2 attacker snapshots at iters [3, 7]
+[phase B] centralized defender vs attacker population
+[phase B] population size = 4
+  [cdef it=  0 step=   2048] ret=-1.088 len= 24.0 d_succ=0.000 pl=-0.0030 vl=0.0229 H=+5.675 fps=45009
+  [cdef it=  7 step=  16384] ret=-1.068 len= 19.5 d_succ=0.000 pl=-0.0021 vl=0.0033 H=+5.702 fps=44816
+saved checkpoints → outputs_central_smoke/checkpoints/k2_sigma1.0_p0.7
+train_elapsed=1.8s
+eval_main={'k': 2, 'sigma': 1.0, 'p': 0.7, 'n_episodes': 200, 'attacker_success_rate': 0.02500000037252903, 'ci_95': (0.004999999888241291, 0.05000000074505806), 'mean_episode_length': 465.805, 'n_attacker_wins': 5, 'n_capture': 16, 'n_timeout': 179}
+eval_attacker_vs_heuristic_def={'k': 2, 'sigma': 1.0, 'p': 0.7, 'n_episodes': 200, 'attacker_success_rate': 0.0, 'ci_95': (0.0, 0.0), 'mean_episode_length': 25.11, 'n_attacker_wins': 0, 'n_capture': 200, 'n_timeout': 0}
+eval_heuristic_att_vs_cdef={'k': 2, 'sigma': 1.0, 'p': 0.7, 'n_episodes': 200, 'attacker_success_rate': 0.9900000095367432, 'ci_95': (0.9750000238418579, 1.0), 'mean_episode_length': 24.205, 'n_attacker_wins': 198, 'n_capture': 2, 'n_timeout': 0}
+saved anim → central_k2_sigma1.0_p0.7_ep0.mp4 (500 steps, outcome=3)

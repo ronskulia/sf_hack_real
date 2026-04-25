@@ -1,0 +1,15 @@
+09:19:18 config: {"sweep": {"k_values": [1, 2, 3, 4], "sigma": 1.0, "p": 0.7}, "env": {"dt": 0.02, "max_steps": 500, "capture_radius": 0.03, "target_radius": 0.1, "target_pos": [0.5, 0.5], "v_attacker": 1.0, "defender_inner_radius": 0.15, "defender_outer_radius": 0.35, "attacker_danger_radius": 0.15, "attacker_shaping": 0.01, "defender_shaping": 0.01}, "training": {"attacker_warmup_iters": 50, "attacker_iters": 100, "defender_iters": 100, "n_alternations": 3, "n_envs": 256, "n_steps": 128, "n_epochs": 4, "minibatch_size": 512, "lr": 0.0003, "gamma": 0.99, "gae_lambda": 0.95, "clip_coef": 0.2, "ent_coef": 0.01, "vf_coef": 0.5, "max_grad_norm": 0.5}, "evaluation": {"n_episodes": 2000, "n_animations": 3}, "mode": "rl", "seed": 0}
+09:19:18 sweep cells: 4  (k_values=[1, 2, 3, 4], sigmas=[1.0], ps=[0.7])
+09:19:18 === heuristic baseline ===
+09:19:20   [heur] k= 1 σ=1.00 p=0.70  succ=0.262 CI=[0.243,0.281]  len=19.2
+09:19:20   [heur] k= 2 σ=1.00 p=0.70  succ=0.105 CI=[0.091,0.119]  len=16.6
+09:19:20   [heur] k= 3 σ=1.00 p=0.70  succ=0.046 CI=[0.037,0.056]  len=14.8
+09:19:20   [heur] k= 4 σ=1.00 p=0.70  succ=0.025 CI=[0.019,0.032]  len=13.6
+09:19:20 === RL training sweep ===
+09:19:20 n_workers = 4, n_cells = 4
+09:29:49   [rl  ] k= 1 σ=1.00 p=0.70  succ=0.242 CI=[0.223,0.261]  train=626s
+09:33:10   [rl  ] k= 2 σ=1.00 p=0.70  succ=0.002 CI=[0.001,0.005]  train=827s
+09:35:49   [rl  ] k= 3 σ=1.00 p=0.70  succ=0.188 CI=[0.170,0.205]  train=984s
+09:38:33   [rl  ] k= 4 σ=1.00 p=0.70  succ=0.207 CI=[0.191,0.224]  train=1148s
+09:38:33 RL sweep total wall: 1153s
+09:38:33 results → outputs_local_k4/results.json

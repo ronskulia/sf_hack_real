@@ -1,0 +1,196 @@
+{
+  "config": {
+    "sweep": {
+      "k_values": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "sigma": 0.7,
+      "p": 0.7
+    },
+    "env": {
+      "dt": 0.02,
+      "max_steps": 500,
+      "capture_radius": 0.03,
+      "target_radius": 0.1,
+      "target_pos": [
+        0.5,
+        0.5
+      ],
+      "v_attacker": 1.0,
+      "defender_inner_radius": 0.15,
+      "defender_outer_radius": 0.35,
+      "attacker_danger_radius": 0.15,
+      "attacker_shaping": 0.01,
+      "defender_shaping": 0.01
+    },
+    "training": {
+      "attacker_warmup_iters": 300,
+      "attacker_iters": 150,
+      "defender_iters": 150,
+      "n_alternations": 1,
+      "n_envs": 256,
+      "n_steps": 128,
+      "n_epochs": 4,
+      "minibatch_size": 512,
+      "lr": 0.0003,
+      "gamma": 0.99,
+      "gae_lambda": 0.95,
+      "clip_coef": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "max_grad_norm": 0.5
+    },
+    "evaluation": {
+      "n_episodes": 2000,
+      "n_animations": 3
+    },
+    "mode": "rl",
+    "seed": 0
+  },
+  "heuristic": [],
+  "rl": [
+    {
+      "cell_id": 0,
+      "k": 1,
+      "sigma": 0.7,
+      "p": 0.7,
+      "eval": {
+        "k": 1,
+        "sigma": 0.7,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.9635000228881836,
+        "ci_95": [
+          0.9549999833106995,
+          0.9710000157356262
+        ],
+        "mean_episode_length": 24.605,
+        "n_attacker_wins": 1927,
+        "n_capture": 73,
+        "n_timeout": 0
+      },
+      "train_seconds": 607.7644937500008,
+      "log_path": "outputs_long_s07/checkpoints/k1_sigma0.7_p0.7/train.log"
+    },
+    {
+      "cell_id": 1,
+      "k": 2,
+      "sigma": 0.7,
+      "p": 0.7,
+      "eval": {
+        "k": 2,
+        "sigma": 0.7,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.7889999747276306,
+        "ci_95": [
+          0.7699999809265137,
+          0.8059999942779541
+        ],
+        "mean_episode_length": 74.349,
+        "n_attacker_wins": 1578,
+        "n_capture": 214,
+        "n_timeout": 208
+      },
+      "train_seconds": 768.3065828469989,
+      "log_path": "outputs_long_s07/checkpoints/k2_sigma0.7_p0.7/train.log"
+    },
+    {
+      "cell_id": 2,
+      "k": 3,
+      "sigma": 0.7,
+      "p": 0.7,
+      "eval": {
+        "k": 3,
+        "sigma": 0.7,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.7335000038146973,
+        "ci_95": [
+          0.7149999737739563,
+          0.7524999976158142
+        ],
+        "mean_episode_length": 26.702,
+        "n_attacker_wins": 1467,
+        "n_capture": 533,
+        "n_timeout": 0
+      },
+      "train_seconds": 877.263796788,
+      "log_path": "outputs_long_s07/checkpoints/k3_sigma0.7_p0.7/train.log"
+    },
+    {
+      "cell_id": 3,
+      "k": 4,
+      "sigma": 0.7,
+      "p": 0.7,
+      "eval": {
+        "k": 4,
+        "sigma": 0.7,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.7609999775886536,
+        "ci_95": [
+          0.7419999837875366,
+          0.7805125117301941
+        ],
+        "mean_episode_length": 25.2825,
+        "n_attacker_wins": 1522,
+        "n_capture": 478,
+        "n_timeout": 0
+      },
+      "train_seconds": 1009.1022434680053,
+      "log_path": "outputs_long_s07/checkpoints/k4_sigma0.7_p0.7/train.log"
+    },
+    {
+      "cell_id": 4,
+      "k": 5,
+      "sigma": 0.7,
+      "p": 0.7,
+      "eval": {
+        "k": 5,
+        "sigma": 0.7,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.6159999966621399,
+        "ci_95": [
+          0.5945000052452087,
+          0.6370125412940979
+        ],
+        "mean_episode_length": 28.829,
+        "n_attacker_wins": 1232,
+        "n_capture": 768,
+        "n_timeout": 0
+      },
+      "train_seconds": 1095.431632022999,
+      "log_path": "outputs_long_s07/checkpoints/k5_sigma0.7_p0.7/train.log"
+    },
+    {
+      "cell_id": 5,
+      "k": 6,
+      "sigma": 0.7,
+      "p": 0.7,
+      "eval": {
+        "k": 6,
+        "sigma": 0.7,
+        "p": 0.7,
+        "n_episodes": 2000,
+        "attacker_success_rate": 0.5360000133514404,
+        "ci_95": [
+          0.5145000219345093,
+          0.5580000281333923
+        ],
+        "mean_episode_length": 22.9045,
+        "n_attacker_wins": 1072,
+        "n_capture": 928,
+        "n_timeout": 0
+      },
+      "train_seconds": 1125.810190408003,
+      "log_path": "outputs_long_s07/checkpoints/k6_sigma0.7_p0.7/train.log"
+    }
+  ]
+}
