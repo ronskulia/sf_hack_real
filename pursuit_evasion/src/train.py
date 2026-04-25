@@ -567,3 +567,99 @@ def alternating_train(
         "metrics": all_metrics,
         "env_meta": env.metadata(),
     }
+
+
+# ============================================================================
+# Independent training: each side trains against a *fixed heuristic* opponent.
+# No alternation, no oscillation — just two best-response policies.
+# ============================================================================
+
+
+def independent_train(
+    *,
+    k: int,
+    sigma: float,
+    p: float,
+    cfg: PPOConfig,
+    n_envs: int,
+    attacker_iters: int,
+    defender_iters: int,
+    seed: int = 0,
+    env_kwargs: dict | None = None,
+    save_dir: Path | str | None = None,
+    log_fn=print,
+) -> dict:
+    """Train attacker and defender independently, each vs a heuristic opponent.
+
+    Phase A: train ``NeuralAttackerNet`` vs ``HeuristicDefender`` for
+    ``attacker_iters`` PPO iters.
+
+    Phase B: starting from a *fresh env*, train ``NeuralDefenderNet`` vs
+    ``HeuristicAttacker`` for ``defender_iters`` PPO iters.
+
+    Neither side ever sees the other; both have a stationary target to
+    optimize against. This avoids the alternation oscillation entirely.
+
+    Returns
+    -------
+    dict with ``attacker_net``, ``defender_net``, ``metrics``.
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    env_kwargs = env_kwargs or {}
+
+    log_fn(
+        f"=== independent_train  k={k} sigma={sigma} p={p}  "
+        f"attacker_iters={attacker_iters}  defender_iters={defender_iters}  "
+        f"B={n_envs} T={cfg.n_steps} ==="
+    )
+
+    # ---- Phase A: attacker vs heuristic defender ----
+    log_fn("[phase A] train attacker vs heuristic defender")
+    env_a = PursuitEvasionEnv(
+        batch_size=n_envs, k=k, sigma=sigma, p=p, seed=seed, **env_kwargs
+    )
+    attacker_net = NeuralAttackerNet(env_a.attacker_obs_dim)
+    heuristic_defender = HeuristicDefender(
+        v_defender=env_a.v_defender, capture_radius=env_a.capture_radius
+    )
+    a_log = train_attacker(
+        env_a,
+        attacker_net,
+        heuristic_defender,
+        n_iters=attacker_iters,
+        cfg=cfg,
+        log_fn=log_fn,
+    )
+
+    # ---- Phase B: defender vs heuristic attacker ----
+    log_fn("[phase B] train defender vs heuristic attacker")
+    env_b = PursuitEvasionEnv(
+        batch_size=n_envs, k=k, sigma=sigma, p=p, seed=seed + 1, **env_kwargs
+    )
+    defender_net = NeuralDefenderNet(k=k)
+    heuristic_attacker = HeuristicAttacker(
+        target=env_b.target, v_attacker=env_b.v_attacker
+    )
+    d_log = train_defender(
+        env_b,
+        defender_net,
+        heuristic_attacker,
+        n_iters=defender_iters,
+        cfg=cfg,
+        log_fn=log_fn,
+    )
+
+    if save_dir is not None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(attacker_net.state_dict(), save_dir / "attacker.pt")
+        torch.save(defender_net.state_dict(), save_dir / "defender.pt")
+        log_fn(f"saved checkpoints → {save_dir}")
+
+    return {
+        "attacker_net": attacker_net,
+        "defender_net": defender_net,
+        "metrics": {"attacker": a_log["metrics"], "defender": d_log["metrics"]},
+        "env_meta": env_a.metadata(),
+    }

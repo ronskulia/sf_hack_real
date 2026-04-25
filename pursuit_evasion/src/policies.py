@@ -205,6 +205,106 @@ class HeuristicDefender:
         return (direction / np.maximum(norm, 1e-8) * self.v).astype(np.float32)
 
 
+class HeuristicDefenderTeam:
+    """Team-aware heuristic defender: a few chasers + goalies on a guard ring.
+
+    Each step, the closest ``n_chasers`` defenders to the attacker are tagged
+    as chasers (they run Apollonius intercept). The remaining defenders are
+    goalies — they hold position on a ring of radius ``r_guard`` around the
+    target, each at its own current angle relative to the target.
+
+    Role re-assignment is per-step, so if a chaser slips past the attacker the
+    nearest goalie automatically becomes the new chaser. With ``n_chasers``
+    small relative to ``k``, the team always keeps coverage near the goal.
+
+    Parameters
+    ----------
+    v_defender : float
+        Max defender speed.
+    capture_radius : float
+        Capture radius (used in some sizing decisions).
+    target_pos : sequence of float
+    n_chasers : int or None
+        Number of defenders pursuing the attacker. ``None`` ⇒ ``max(1, k // 3)``.
+    r_guard : float
+        Goalie ring radius around target.
+    """
+
+    def __init__(
+        self,
+        v_defender: float,
+        capture_radius: float = 0.03,
+        target_pos: tuple[float, float] = (0.5, 0.5),
+        n_chasers: int | None = None,
+        r_guard: float = 0.10,
+    ) -> None:
+        self.v = float(v_defender)
+        self.r_cap = float(capture_radius)
+        self.target = np.asarray(target_pos, dtype=np.float32)
+        self.n_chasers = n_chasers
+        self.r_guard = float(r_guard)
+
+    def act(self, env: PursuitEvasionEnv) -> np.ndarray:
+        """Return defender velocities (B, k, 2)."""
+        B, k = env.B, env.k
+        attacker_pos = env.attacker_pos
+        attacker_vel = env.attacker_vel
+        defender_pos = env.defender_pos
+
+        n_chasers = self.n_chasers if self.n_chasers is not None else max(1, k // 3)
+        n_chasers = min(int(n_chasers), k)
+
+        # ---- 1. Pick chaser_mask: closest n_chasers per env ----
+        rel_to_att = attacker_pos[:, None, :] - defender_pos  # (B, k, 2)
+        dist_to_att = np.linalg.norm(rel_to_att, axis=-1)  # (B, k)
+        if n_chasers >= k:
+            chaser_mask = np.ones((B, k), dtype=bool)
+        else:
+            chaser_idx = np.argpartition(dist_to_att, n_chasers - 1, axis=-1)[:, :n_chasers]
+            chaser_mask = np.zeros((B, k), dtype=bool)
+            np.put_along_axis(chaser_mask, chaser_idx, True, axis=-1)
+
+        # ---- 2. Apollonius intercept (used by chasers) ----
+        d_vec = attacker_pos[:, None, :] - defender_pos
+        d_sq = (d_vec ** 2).sum(axis=-1)
+        v_a_sq = (attacker_vel ** 2).sum(axis=-1, keepdims=True)
+        d_dot_va = (d_vec * attacker_vel[:, None, :]).sum(axis=-1)
+        a_coef = np.broadcast_to(self.v ** 2 - v_a_sq, (B, k))
+        b_coef = -2.0 * d_dot_va
+        c_coef = -d_sq
+        disc = b_coef ** 2 - 4.0 * a_coef * c_coef
+        a_safe = np.where(np.abs(a_coef) < 1e-8, 1e-8, a_coef)
+        sqrt_disc = np.sqrt(np.maximum(disc, 0.0))
+        t1 = (-b_coef + sqrt_disc) / (2.0 * a_safe)
+        t2 = (-b_coef - sqrt_disc) / (2.0 * a_safe)
+        t_pos1 = np.where(t1 > 0, t1, np.inf)
+        t_pos2 = np.where(t2 > 0, t2, np.inf)
+        t_chosen = np.minimum(t_pos1, t_pos2)
+        valid = (disc >= 0) & np.isfinite(t_chosen)
+        t_chosen = np.where(valid, t_chosen, 0.0)
+        intercept = attacker_pos[:, None, :] + attacker_vel[:, None, :] * t_chosen[..., None]
+        intercept = np.where(valid[..., None], intercept, attacker_pos[:, None, :])
+
+        # ---- 3. Goalie home positions: r_guard ring at each defender's
+        # current angle relative to target ----
+        rel_to_target = defender_pos - self.target[None, None, :]
+        angles = np.arctan2(rel_to_target[..., 1], rel_to_target[..., 0])
+        home_pos = np.stack(
+            [
+                self.target[0] + self.r_guard * np.cos(angles),
+                self.target[1] + self.r_guard * np.sin(angles),
+            ],
+            axis=-1,
+        )  # (B, k, 2)
+
+        # ---- 4. Combine: chaser → intercept, goalie → home ----
+        target_pt = np.where(chaser_mask[..., None], intercept, home_pos)
+
+        direction = target_pt - defender_pos
+        norm = np.linalg.norm(direction, axis=-1, keepdims=True)
+        return (direction / np.maximum(norm, 1e-8) * self.v).astype(np.float32)
+
+
 # =============================================================================
 # Neural policies (PyTorch)
 # =============================================================================
