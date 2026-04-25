@@ -23,12 +23,15 @@ import torch.optim as optim
 
 from .env import PursuitEvasionEnv
 from .policies import (
+    CentralizedDefender,
+    CentralizedDefenderNet,
     HeuristicAttacker,
     HeuristicDefender,
     NeuralAttacker,
     NeuralAttackerNet,
     NeuralDefender,
     NeuralDefenderNet,
+    PopulationAttacker,
 )
 
 
@@ -194,6 +197,7 @@ def train_attacker(
     device: torch.device | None = None,
     log_every: int = 10,
     log_fn=print,
+    snapshot_iters: list[int] | None = None,
 ) -> dict:
     """PPO-train the attacker network against a fixed defender opponent.
 
@@ -227,6 +231,8 @@ def train_attacker(
     next_done = torch.zeros(B, device=device)
 
     metrics: list[dict] = []
+    snapshots: list[dict] = []  # list of state_dict copies at requested iters
+    snapshot_set = set(snapshot_iters or [])
     t_start = time.perf_counter()
     total_steps = 0
 
@@ -320,7 +326,10 @@ def train_attacker(
                 f"succ={m['attacker_succ']:.3f} "
                 f"pl={pl:+.4f} vl={vl:.4f} H={ent:+.3f} fps={m['fps']:.0f}"
             )
-    return {"metrics": metrics}
+        if it in snapshot_set:
+            snapshots.append({k: v.detach().cpu().clone() for k, v in net.state_dict().items()})
+            log_fn(f"  [att it={it:3d}] snapshot saved (#{len(snapshots)})")
+    return {"metrics": metrics, "snapshots": snapshots}
 
 
 # ============================================================================
@@ -661,5 +670,296 @@ def independent_train(
         "attacker_net": attacker_net,
         "defender_net": defender_net,
         "metrics": {"attacker": a_log["metrics"], "defender": d_log["metrics"]},
+        "env_meta": env_a.metadata(),
+    }
+
+
+# ============================================================================
+# Centralized defender training
+# ============================================================================
+
+
+def train_defender_centralized(
+    env: PursuitEvasionEnv,
+    net: CentralizedDefenderNet,
+    attacker_policy: _ActsOnEnv,
+    *,
+    n_iters: int,
+    cfg: PPOConfig,
+    optimizer: optim.Optimizer | None = None,
+    device: torch.device | None = None,
+    log_every: int = 10,
+    log_fn=print,
+    population: PopulationAttacker | None = None,
+) -> dict:
+    """PPO-train the centralized defender (one brain, k×2-D action) against
+    a fixed attacker policy.
+
+    If ``population`` is supplied, it is used as the attacker for actions and
+    is reshuffled each time envs reset — this gives the defender opponent
+    diversity (mixture of attacker snapshots / strengths).
+    """
+    device = device or torch.device("cpu")
+    if optimizer is None:
+        optimizer = optim.Adam(net.parameters(), lr=cfg.lr, eps=1e-5)
+    net.to(device)
+
+    B = env.B
+    k = env.k
+    obs_dim = 4 + 4 * k
+    action_dim = 2 * k
+    T = cfg.n_steps
+
+    env.reset()
+    next_obs = torch.as_tensor(CentralizedDefenderNet.build_obs(env), device=device)
+    next_done = torch.zeros(B, device=device)
+    if population is not None:
+        population.reshuffle()
+
+    metrics: list[dict] = []
+    t_start = time.perf_counter()
+    total_steps = 0
+
+    for it in range(n_iters):
+        obs_buf = torch.zeros(T, B, obs_dim, device=device)
+        act_buf = torch.zeros(T, B, action_dim, device=device)
+        lp_buf = torch.zeros(T, B, device=device)
+        val_buf = torch.zeros(T, B, device=device)
+        rew_buf = torch.zeros(T, B, device=device)
+        done_buf = torch.zeros(T, B, device=device)
+
+        tracker = _episode_tracker_init(B)
+
+        for t in range(T):
+            obs_buf[t] = next_obs
+            done_buf[t] = next_done
+
+            with torch.no_grad():
+                mean, logstd, value = net(next_obs)
+                std = logstd.exp()
+                dist = torch.distributions.Normal(mean, std)
+                action = dist.sample()  # (B, 2k)
+                logprob = dist.log_prob(action).sum(-1)
+
+            opp = population if population is not None else attacker_policy
+            a_action = opp.act(env)
+            d_action_np = PursuitEvasionEnv._clip_speed(
+                action.cpu().numpy().reshape(B, k, 2), env.v_defender
+            )
+            res = env.step(a_action, d_action_np)
+
+            act_buf[t] = action
+            lp_buf[t] = logprob
+            val_buf[t] = value
+            rew_buf[t] = torch.as_tensor(res.defender_reward, device=device)
+
+            _episode_tracker_step(
+                tracker, res.defender_reward, res.just_done, res.outcome
+            )
+            if res.just_done.any():
+                env.reset_idxs(res.just_done)
+                if population is not None:
+                    population.reshuffle(res.just_done)
+
+            next_obs = torch.as_tensor(
+                CentralizedDefenderNet.build_obs(env), device=device
+            )
+            next_done = torch.as_tensor(
+                res.just_done.astype(np.float32), device=device
+            )
+
+        with torch.no_grad():
+            _, _, next_value = net(next_obs)
+
+        advantages, returns = _gae(
+            rew_buf, val_buf, done_buf, next_value, next_done, cfg.gamma, cfg.gae_lambda
+        )
+
+        flat_obs = obs_buf.reshape(-1, obs_dim)
+        flat_act = act_buf.reshape(-1, action_dim)
+        flat_lp = lp_buf.reshape(-1)
+        flat_adv = advantages.reshape(-1)
+        flat_ret = returns.reshape(-1)
+        flat_val = val_buf.reshape(-1)
+
+        pl, vl, ent = _ppo_update(
+            net, optimizer, flat_obs, flat_act, flat_lp, flat_adv, flat_ret, flat_val, cfg
+        )
+
+        total_steps += T * B
+        elapsed = time.perf_counter() - t_start
+        not_att = (
+            float(np.mean([o != 1 for o in tracker["ep_outcomes"]]))
+            if tracker["ep_outcomes"]
+            else float("nan")
+        )
+        m = {
+            "iter": it,
+            "step": total_steps,
+            "ep_return": float(np.mean(tracker["ep_rets"])) if tracker["ep_rets"] else float("nan"),
+            "ep_length": float(np.mean(tracker["ep_lens"])) if tracker["ep_lens"] else float("nan"),
+            "defender_succ": not_att,
+            "policy_loss": pl,
+            "value_loss": vl,
+            "entropy": ent,
+            "fps": total_steps / max(elapsed, 1e-6),
+            "n_eps": len(tracker["ep_rets"]),
+        }
+        metrics.append(m)
+        if log_every and (it % log_every == 0 or it == n_iters - 1):
+            log_fn(
+                f"  [cdef it={it:3d} step={total_steps:>7d}] "
+                f"ret={m['ep_return']:+.3f} len={m['ep_length']:5.1f} "
+                f"d_succ={m['defender_succ']:.3f} "
+                f"pl={pl:+.4f} vl={vl:.4f} H={ent:+.3f} fps={m['fps']:.0f}"
+            )
+    return {"metrics": metrics}
+
+
+# ============================================================================
+# Sequential training: warmup attacker (with snapshots) → centralized defender
+# vs population of attackers. No alternation, no oscillation.
+# ============================================================================
+
+
+def sequential_train(
+    *,
+    k: int,
+    sigma: float,
+    p: float,
+    cfg: PPOConfig,
+    n_envs: int,
+    attacker_warmup_iters: int,
+    central_defender_iters: int,
+    snapshot_fractions: tuple[float, ...] = (0.4, 0.7, 1.0),
+    attacker_hidden: int = 256,
+    attacker_n_layers: int = 2,
+    central_hidden: int = 256,
+    central_n_layers: int = 3,
+    seed: int = 0,
+    env_kwargs: dict | None = None,
+    save_dir: Path | str | None = None,
+    log_fn=print,
+) -> dict:
+    """Two-phase training with population-based opponent during phase B.
+
+    Phase A: train ``NeuralAttackerNet`` (bigger MLP) vs ``HeuristicDefender``
+    for ``attacker_warmup_iters`` PPO iters. Save attacker state_dict at
+    iterations ``attacker_warmup_iters * fraction`` for each fraction in
+    ``snapshot_fractions``. The final iteration is always saved.
+
+    Phase B: train ``CentralizedDefenderNet`` vs a :class:`PopulationAttacker`
+    composed of (the heuristic attacker) + (every saved RL snapshot, both
+    deterministic and stochastic variants). The defender therefore sees a
+    diverse opponent population at every batch step and can't over-fit to a
+    single attacker.
+
+    Returns ``{attacker_net, central_defender_net, metrics, env_meta}``.
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    env_kwargs = env_kwargs or {}
+
+    log_fn(
+        f"=== sequential_train  k={k} sigma={sigma} p={p}  "
+        f"warmup={attacker_warmup_iters} cdef={central_defender_iters}  "
+        f"att_arch={attacker_hidden}x{attacker_n_layers} "
+        f"cdef_arch={central_hidden}x{central_n_layers}  B={n_envs} ==="
+    )
+
+    # ---- Phase A: attacker vs heuristic defender ----
+    log_fn("[phase A] attacker (bigger MLP) vs heuristic defender")
+    env_a = PursuitEvasionEnv(
+        batch_size=n_envs, k=k, sigma=sigma, p=p, seed=seed, **env_kwargs
+    )
+    attacker_net = NeuralAttackerNet(
+        env_a.attacker_obs_dim, hidden=attacker_hidden, n_layers=attacker_n_layers
+    )
+    heuristic_defender = HeuristicDefender(
+        v_defender=env_a.v_defender, capture_radius=env_a.capture_radius
+    )
+    snap_iters = sorted(
+        {
+            max(0, int(round(attacker_warmup_iters * f)) - 1)
+            for f in snapshot_fractions
+        }
+    )
+    a_log = train_attacker(
+        env_a,
+        attacker_net,
+        heuristic_defender,
+        n_iters=attacker_warmup_iters,
+        cfg=cfg,
+        log_fn=log_fn,
+        snapshot_iters=snap_iters,
+    )
+    snapshots = a_log["snapshots"]
+    log_fn(f"[phase A] saved {len(snapshots)} attacker snapshots at iters {snap_iters}")
+
+    # ---- Phase B: centralized defender vs attacker population ----
+    log_fn("[phase B] centralized defender vs attacker population")
+    env_b = PursuitEvasionEnv(
+        batch_size=n_envs, k=k, sigma=sigma, p=p, seed=seed + 1, **env_kwargs
+    )
+    central_defender_net = CentralizedDefenderNet(
+        k=k, hidden=central_hidden, n_layers=central_n_layers
+    )
+
+    # Build the population: heuristic + each snapshot (deterministic) + final
+    # snapshot stochastic variant (extra noise diversity).
+    pop_policies: list = [
+        HeuristicAttacker(target=env_b.target, v_attacker=env_b.v_attacker)
+    ]
+    for sd in snapshots:
+        snap_net = NeuralAttackerNet(
+            env_b.attacker_obs_dim,
+            hidden=attacker_hidden,
+            n_layers=attacker_n_layers,
+        )
+        snap_net.load_state_dict(sd)
+        snap_net.eval()
+        pop_policies.append(
+            NeuralAttacker(snap_net, env_b.v_attacker, deterministic=True)
+        )
+    # Stochastic version of the strongest (final) snapshot.
+    if snapshots:
+        final_net = NeuralAttackerNet(
+            env_b.attacker_obs_dim,
+            hidden=attacker_hidden,
+            n_layers=attacker_n_layers,
+        )
+        final_net.load_state_dict(snapshots[-1])
+        final_net.eval()
+        pop_policies.append(
+            NeuralAttacker(final_net, env_b.v_attacker, deterministic=False)
+        )
+    population = PopulationAttacker(pop_policies, env_b.B, rng_seed=seed + 2)
+    log_fn(f"[phase B] population size = {len(pop_policies)}")
+
+    # Pass a sentinel attacker_policy too (unused when population is set)
+    cd_log = train_defender_centralized(
+        env_b,
+        central_defender_net,
+        attacker_policy=pop_policies[0],
+        n_iters=central_defender_iters,
+        cfg=cfg,
+        log_fn=log_fn,
+        population=population,
+    )
+
+    if save_dir is not None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(attacker_net.state_dict(), save_dir / "attacker.pt")
+        torch.save(central_defender_net.state_dict(), save_dir / "central_defender.pt")
+        for i, sd in enumerate(snapshots):
+            torch.save(sd, save_dir / f"attacker_snapshot_{i}.pt")
+        log_fn(f"saved checkpoints → {save_dir}")
+
+    return {
+        "attacker_net": attacker_net,
+        "central_defender_net": central_defender_net,
+        "snapshots": snapshots,
+        "metrics": {"attacker": a_log["metrics"], "central_defender": cd_log["metrics"]},
         "env_meta": env_a.metadata(),
     }

@@ -1,0 +1,47 @@
+# Centralized-defender training config.
+# Phase A: attacker (256x2 MLP) vs heuristic defender (300 iters, snapshotting)
+# Phase B: centralized defender (256x3 MLP) vs population of attackers (800 iters)
+sweep:
+  k_values: [1, 2, 3, 4, 5, 6]
+  sigma: 1.0
+  p: 0.7
+
+env:
+  dt: 0.02
+  max_steps: 500
+  capture_radius: 0.03
+  target_radius: 0.10
+  target_pos: [0.5, 0.5]
+  v_attacker: 1.0
+  defender_inner_radius: 0.15
+  defender_outer_radius: 0.35
+  attacker_danger_radius: 0.15
+  attacker_shaping: 0.01
+  defender_shaping: 0.01
+
+training:
+  attacker_warmup_iters: 300
+  central_defender_iters: 800
+  snapshot_fractions: [0.4, 0.7, 1.0]
+  attacker_hidden: 256
+  attacker_n_layers: 2
+  central_hidden: 256
+  central_n_layers: 3
+  n_envs: 256
+  n_steps: 128
+  n_epochs: 4
+  minibatch_size: 512
+  lr: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+evaluation:
+  n_episodes: 2000
+  n_animations: 3
+
+mode: "rl"
+seed: 0

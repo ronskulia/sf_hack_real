@@ -318,16 +318,18 @@ def _layer_init(layer: nn.Linear, std: float = np.sqrt(2.0), bias_const: float =
 
 
 class _MLPTrunk(nn.Module):
-    """Two hidden layers, tanh activations — shared trunk for actor + critic."""
+    """Configurable MLP trunk (tanh activations), shared between actor and critic."""
 
-    def __init__(self, in_dim: int, hidden: int = 128) -> None:
+    def __init__(self, in_dim: int, hidden: int = 128, n_layers: int = 2) -> None:
         super().__init__()
-        self.net = nn.Sequential(
+        layers: list[nn.Module] = [
             _layer_init(nn.Linear(in_dim, hidden)),
             nn.Tanh(),
-            _layer_init(nn.Linear(hidden, hidden)),
-            nn.Tanh(),
-        )
+        ]
+        for _ in range(n_layers - 1):
+            layers.append(_layer_init(nn.Linear(hidden, hidden)))
+            layers.append(nn.Tanh())
+        self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -340,9 +342,11 @@ class NeuralAttackerNet(nn.Module):
     over velocity (mean, learned per-dim log-std) plus a scalar value.
     """
 
-    def __init__(self, obs_dim: int, hidden: int = 128, action_dim: int = 2) -> None:
+    def __init__(
+        self, obs_dim: int, hidden: int = 256, n_layers: int = 2, action_dim: int = 2
+    ) -> None:
         super().__init__()
-        self.trunk = _MLPTrunk(obs_dim, hidden)
+        self.trunk = _MLPTrunk(obs_dim, hidden, n_layers)
         self.actor_mean = _layer_init(nn.Linear(hidden, action_dim), std=0.01)
         self.actor_logstd = nn.Parameter(torch.zeros(1, action_dim))
         self.critic = _layer_init(nn.Linear(hidden, 1), std=1.0)
@@ -458,3 +462,150 @@ class NeuralDefender:
             action = torch.normal(mean, std)
         action = action.numpy().reshape(B, k, 2)
         return PursuitEvasionEnv._clip_speed(action, self.v)
+
+
+# =============================================================================
+# Centralized defender (one brain, sees full state, outputs all k velocities)
+# =============================================================================
+
+
+class CentralizedDefenderNet(nn.Module):
+    """Centralized actor-critic for the defender team.
+
+    A single network sees the entire game state (attacker pos+vel and every
+    defender's pos+vel) and outputs a velocity *for every defender* —
+    ``2 * k`` continuous outputs total. This breaks the parameter-sharing
+    symmetry of :class:`NeuralDefenderNet` and lets the team learn explicit
+    role differentiation (e.g. "you chase, I guard") since the network can
+    decide what each defender does individually.
+
+    Trade-off: the action space and observation are k-specific, so a network
+    trained at k=4 cannot be re-used at k=6. We train one centralized
+    network per ``k``.
+    """
+
+    def __init__(
+        self,
+        k: int,
+        hidden: int = 256,
+        n_layers: int = 3,
+        action_dim_per_agent: int = 2,
+    ) -> None:
+        super().__init__()
+        self.k = int(k)
+        in_dim = 4 + 4 * self.k  # att_pos, att_vel, def_pos×k, def_vel×k
+        out_dim = action_dim_per_agent * self.k
+        self.trunk = _MLPTrunk(in_dim, hidden, n_layers)
+        self.actor_mean = _layer_init(nn.Linear(hidden, out_dim), std=0.01)
+        self.actor_logstd = nn.Parameter(torch.zeros(1, out_dim))
+        self.critic = _layer_init(nn.Linear(hidden, 1), std=1.0)
+
+    @staticmethod
+    def build_obs(env: PursuitEvasionEnv) -> np.ndarray:
+        """Build the centralized observation tensor of shape ``(B, 4 + 4k)``."""
+        B, k = env.B, env.k
+        return np.concatenate(
+            [
+                env.attacker_pos,
+                env.attacker_vel,
+                env.defender_pos.reshape(B, 2 * k),
+                env.defender_vel.reshape(B, 2 * k),
+            ],
+            axis=-1,
+        ).astype(np.float32)
+
+    def forward(
+        self, obs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return (action_mean (B, 2k), action_logstd (B, 2k), value (B,))."""
+        h = self.trunk(obs)
+        mean = self.actor_mean(h)
+        logstd = self.actor_logstd.expand_as(mean)
+        value = self.critic(h).squeeze(-1)
+        return mean, logstd, value
+
+
+class CentralizedDefender:
+    """Inference-only wrapper for :class:`CentralizedDefenderNet`."""
+
+    def __init__(
+        self,
+        net: CentralizedDefenderNet,
+        v_defender: float,
+        *,
+        deterministic: bool = True,
+    ) -> None:
+        self.net = net
+        self.v = float(v_defender)
+        self.deterministic = bool(deterministic)
+        self.k = net.k
+
+    @torch.no_grad()
+    def act(self, env: PursuitEvasionEnv) -> np.ndarray:
+        obs = CentralizedDefenderNet.build_obs(env)
+        obs_t = torch.from_numpy(obs)
+        mean, logstd, _ = self.net(obs_t)
+        if self.deterministic:
+            action = mean
+        else:
+            std = logstd.exp()
+            action = torch.normal(mean, std)
+        action_np = action.numpy().reshape(env.B, env.k, 2)
+        return PursuitEvasionEnv._clip_speed(action_np, self.v)
+
+
+# =============================================================================
+# Opponent population (per-env mixture of policies)
+# =============================================================================
+
+
+class PopulationAttacker:
+    """Mixture-of-attackers wrapper.
+
+    On construction, each of the ``B`` environments in the batch is randomly
+    assigned to one of the supplied attacker policies. ``act`` runs every
+    policy in the pool and dispatches each env's action from its assigned
+    policy. Call :meth:`reshuffle` (typically when envs reset) to
+    re-randomize assignments so the defender keeps seeing a diverse mix.
+
+    Used during centralized-defender training to prevent the defender from
+    over-fitting to a single attacker's specific gait — instead, it sees
+    weak / medium / strong RL attacker snapshots plus a heuristic baseline.
+    """
+
+    def __init__(
+        self,
+        policies: list,
+        batch_size: int,
+        rng_seed: int = 0,
+    ) -> None:
+        if not policies:
+            raise ValueError("PopulationAttacker needs at least one policy.")
+        self.policies = list(policies)
+        self.B = int(batch_size)
+        self.rng = np.random.default_rng(rng_seed)
+        self.assignment: np.ndarray = self.rng.integers(
+            0, len(self.policies), size=self.B
+        )
+
+    def reshuffle(self, idxs: np.ndarray | None = None) -> None:
+        """Re-randomize policy assignment for the given envs (or all if None)."""
+        if idxs is None:
+            self.assignment = self.rng.integers(
+                0, len(self.policies), size=self.B
+            )
+            return
+        idxs = np.asarray(idxs)
+        if idxs.dtype == bool:
+            idxs = np.where(idxs)[0]
+        if len(idxs) == 0:
+            return
+        self.assignment[idxs] = self.rng.integers(
+            0, len(self.policies), size=len(idxs)
+        )
+
+    def act(self, env: PursuitEvasionEnv) -> np.ndarray:
+        # Compute every policy's action for the whole batch, then gather.
+        per_policy = np.stack([p.act(env) for p in self.policies], axis=0)  # (n_pol, B, 2)
+        b_idx = np.arange(self.B)
+        return per_policy[self.assignment, b_idx, :].astype(np.float32)
