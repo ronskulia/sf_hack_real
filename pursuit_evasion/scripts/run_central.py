@@ -161,6 +161,12 @@ def _cell(args: tuple) -> dict:
         else None,
         partial_animation_every=training.get("partial_animation_every", 0),
         partial_animation_max_steps=training.get("partial_animation_max_steps"),
+        progress_plot_path=(
+            Path(out_root)
+            / "plots"
+            / "training_progress"
+            / f"success_over_time_k{k}_sigma{sigma}_p{p}.png"
+        ),
     )
     train_elapsed = time.perf_counter() - t0
     log(f"train_elapsed={train_elapsed:.1f}s")
@@ -209,21 +215,40 @@ def _cell(args: tuple) -> dict:
     )
     log(f"eval_heuristic_att_vs_cdef={eval_vs_heur_att}")
 
-    # Animations: 3 episodes with the full RL pair
-    anim_dir = Path(out_root) / "animations"
+    # Final deterministic sanity animations with the fully trained pair.
+    anim_dir = Path(out_root) / "animations" / "final_sanity"
     anim_dir.mkdir(parents=True, exist_ok=True)
+    outcome_names = {
+        1: "attacker_win",
+        2: "defender_capture",
+        3: "defender_timeout",
+    }
     for i in range(n_anim):
         env_anim = PursuitEvasionEnv(
-            batch_size=1, k=k, sigma=sigma, p=p, seed=seed + 1000 + i, **env_kwargs
+            batch_size=1,
+            k=k,
+            sigma=sigma,
+            p=p,
+            seed=seed + 1000 + cell_id * 100 + i,
+            **env_kwargs,
         )
-        a_anim = NeuralAttacker(res["attacker_net"], env_anim.v_attacker, deterministic=False)
+        a_anim = NeuralAttacker(
+            res["attacker_net"], env_anim.v_attacker, deterministic=True
+        )
         cd_anim = CentralizedDefender(
-            res["central_defender_net"], env_anim.v_defender, deterministic=False
+            res["central_defender_net"], env_anim.v_defender, deterministic=True
         )
         h = run_episode(env_anim, a_anim, cd_anim)
-        out_anim = anim_dir / f"central_k{k}_sigma{sigma}_p{p}_ep{i}.mp4"
+        outcome_name = outcome_names.get(int(h["outcome"]), "running")
+        out_anim = (
+            anim_dir
+            / f"central_k{k}_sigma{sigma}_p{p}_posttrain_ep{i:02d}_{outcome_name}.mp4"
+        )
         save_animation(h, env_anim.metadata(), out_anim)
-        log(f"saved anim → {out_anim.name} ({h['steps']} steps, outcome={h['outcome']})")
+        log(
+            "saved final sanity anim -> "
+            f"{out_anim.name} ({h['steps']} steps, outcome={h['outcome']})"
+        )
 
     progress.close()
 
@@ -304,6 +329,8 @@ def main() -> None:
     parser.add_argument("--out", type=str, default=str(_REPO_ROOT / "outputs_central"))
     parser.add_argument("--threads-per-worker", type=int, default=2,
                         help="BLAS threads per worker process.")
+    parser.add_argument("--final-animations", type=int, default=None,
+                        help="Override evaluation.n_animations for final sanity MP4s.")
     args = parser.parse_args()
 
     out_root = Path(args.out)
@@ -338,7 +365,11 @@ def main() -> None:
     }
     seed = int(config["seed"])
     n_eval = int(config["evaluation"]["n_episodes"])
-    n_anim = int(config["evaluation"]["n_animations"])
+    n_anim = (
+        int(args.final_animations)
+        if args.final_animations is not None
+        else int(config["evaluation"]["n_animations"])
+    )
 
     os.environ["WORKER_THREADS"] = str(args.threads_per_worker)
 

@@ -46,6 +46,6 @@ training:
 
 evaluation:
     n_episodes: 500
-    n_animations: 0
+    n_animations: 5
 mode: "rl"
 seed: 0

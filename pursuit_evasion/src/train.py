@@ -1001,6 +1001,7 @@ def sequential_train(
     partial_animation_dir: Path | str | None = None,
     partial_animation_every: int = 0,
     partial_animation_max_steps: int | None = None,
+    progress_plot_path: Path | str | None = None,
 ) -> dict:
     """Two-phase training with population-based opponent during phase B.
 
@@ -1018,6 +1019,8 @@ def sequential_train(
     ``log_every`` controls how often each PPO phase emits progress lines.
     If ``partial_animation_dir`` and ``partial_animation_every`` are set,
     deterministic preview MP4s are rendered during both phases.
+    If ``progress_plot_path`` is set, the central training progress PNG is
+    refreshed after phase A and again after phase B.
 
     Returns ``{attacker_net, central_defender_net, metrics, env_meta}``.
     """
@@ -1038,6 +1041,24 @@ def sequential_train(
             f"max_steps={partial_animation_max_steps or 'env'}, "
             f"dir={partial_animation_dir}"
         )
+
+    def _update_progress_plot(
+        attacker_metrics: list[dict],
+        central_metrics: list[dict] | None = None,
+    ) -> None:
+        if progress_plot_path is None:
+            return
+        from .plot import training_progress_curve
+
+        out = training_progress_curve(
+            {
+                "attacker": attacker_metrics,
+                "central_defender": central_metrics or [],
+            },
+            out_path=progress_plot_path,
+            title=f"Central training progress (k={k}, sigma={sigma}, p={p})",
+        )
+        log_fn(f"training progress plot -> {out}")
 
     # ---- Phase A: attacker vs heuristic defender ----
     log_fn("[phase A] attacker (bigger MLP) vs heuristic defender")
@@ -1072,6 +1093,7 @@ def sequential_train(
     )
     snapshots = a_log["snapshots"]
     log_fn(f"[phase A] saved {len(snapshots)} attacker snapshots at iters {snap_iters}")
+    _update_progress_plot(a_log["metrics"])
 
     # ---- Phase B: centralized defender vs attacker population ----
     log_fn("[phase B] centralized defender vs attacker population")
@@ -1130,6 +1152,7 @@ def sequential_train(
         animation_seed=seed + 200_000,
         animation_attacker_policy=preview_attacker_policy,
     )
+    _update_progress_plot(a_log["metrics"], cd_log["metrics"])
 
     if save_dir is not None:
         save_dir = Path(save_dir)
