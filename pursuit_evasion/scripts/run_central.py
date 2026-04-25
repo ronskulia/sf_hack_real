@@ -85,6 +85,8 @@ def _cell(args: tuple) -> dict:
         max_grad_norm=training["max_grad_norm"],
     )
 
+    sort_by_distance = bool(training.get("sort_by_distance", False))
+
     t0 = time.perf_counter()
     res = sequential_train(
         k=k,
@@ -99,6 +101,7 @@ def _cell(args: tuple) -> dict:
         attacker_n_layers=training.get("attacker_n_layers", 2),
         central_hidden=training.get("central_hidden", 256),
         central_n_layers=training.get("central_n_layers", 3),
+        sort_by_distance=sort_by_distance,
         seed=seed,
         env_kwargs=env_kwargs,
         save_dir=cell_dir,
@@ -110,7 +113,8 @@ def _cell(args: tuple) -> dict:
     env_meta = res["env_meta"]
     a_pol = NeuralAttacker(res["attacker_net"], env_meta["v_attacker"], deterministic=True)
     cd_pol = CentralizedDefender(
-        res["central_defender_net"], env_meta["v_defender"], deterministic=True
+        res["central_defender_net"], env_meta["v_defender"], deterministic=True,
+        sort_by_distance=sort_by_distance,
     )
 
     # Headline eval: trained attacker vs centralized defender
@@ -160,7 +164,8 @@ def _cell(args: tuple) -> dict:
         )
         a_anim = NeuralAttacker(res["attacker_net"], env_anim.v_attacker, deterministic=False)
         cd_anim = CentralizedDefender(
-            res["central_defender_net"], env_anim.v_defender, deterministic=False
+            res["central_defender_net"], env_anim.v_defender, deterministic=False,
+            sort_by_distance=sort_by_distance,
         )
         h = run_episode(env_anim, a_anim, cd_anim)
         out_anim = anim_dir / f"central_k{k}_sigma{sigma}_p{p}_ep{i}.mp4"
@@ -265,6 +270,7 @@ def main() -> None:
     env_kwargs = {
         "dt": config["env"]["dt"],
         "max_steps": config["env"]["max_steps"],
+        "stun_steps": int(config["env"].get("stun_steps", 0)),
         "capture_radius": config["env"]["capture_radius"],
         "target_radius": config["env"]["target_radius"],
         "target_pos": tuple(config["env"]["target_pos"]),

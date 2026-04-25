@@ -1,13 +1,11 @@
-# Smoke config — centralized pipeline, tiny iters, just to verify code.
 sweep:
-  k_values: [2, 4]
+  k_values: [1, 2, 3, 4]
   sigma: 1.0
   p: 0.7
 
 env:
   dt: 0.02
   max_steps: 500
-  stun_steps: 15
   capture_radius: 0.03
   target_radius: 0.10
   target_pos: [0.5, 0.5]
@@ -19,17 +17,17 @@ env:
   defender_shaping: 0.01
 
 training:
-  attacker_warmup_iters: 8
-  central_defender_iters: 8
-  snapshot_fractions: [0.5, 1.0]
-  attacker_hidden: 64
-  attacker_n_layers: 2
-  central_hidden: 64
-  central_n_layers: 2
-  n_envs: 64
-  n_steps: 32
-  n_epochs: 2
-  minibatch_size: 128
+  defender_type: "centralized"
+  central_hidden: 256
+  central_n_layers: 3
+  attacker_warmup_iters: 50
+  attacker_iters: 100
+  defender_iters: 100
+  n_alternations: 3
+  n_envs: 256
+  n_steps: 128
+  n_epochs: 4
+  minibatch_size: 512
   lr: 3.0e-4
   gamma: 0.99
   gae_lambda: 0.95
@@ -39,8 +37,8 @@ training:
   max_grad_norm: 0.5
 
 evaluation:
-  n_episodes: 200
-  n_animations: 1
+  n_episodes: 2000
+  n_animations: 3
 
 mode: "rl"
 seed: 0

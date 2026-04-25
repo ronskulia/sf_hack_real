@@ -622,6 +622,217 @@ def alternating_train(
 
 
 # ============================================================================
+# Alternating loop with a *centralized* defender (one brain, k×2 action).
+# Same schedule as alternating_train, just swaps the defender architecture.
+# ============================================================================
+
+
+def alternating_train_centralized(
+    *,
+    k: int,
+    sigma: float,
+    p: float,
+    cfg: PPOConfig,
+    n_envs: int,
+    attacker_warmup_iters: int,
+    defender_iters: int,
+    attacker_iters: int,
+    n_alternations: int,
+    seed: int = 0,
+    central_hidden: int = 256,
+    central_n_layers: int = 3,
+    sort_by_distance: bool = False,
+    init_central_defender_state_dict: dict | None = None,
+    init_attacker_state_dict: dict | None = None,
+    use_attacker_population: bool = False,
+    env_kwargs: dict | None = None,
+    save_dir: Path | str | None = None,
+    log_fn=print,
+) -> dict:
+    """Alternating self-play, but the defender team is one centralized net.
+
+    Schedule mirrors :func:`alternating_train`:
+      Phase 0: neural attacker warmup vs (BC-init centralized defender if
+        ``init_central_defender_state_dict`` provided, else HeuristicDefender).
+      Then ``n_alternations`` rounds of:
+        Phase A: freeze attacker, train CentralizedDefenderNet.
+        Phase B: freeze centralized defender, train neural attacker.
+
+    If ``init_central_defender_state_dict`` is given, the centralized
+    defender net loads it at construction (warm-start). The attacker still
+    starts random unless ``init_attacker_state_dict`` is also given.
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    env_kwargs = env_kwargs or {}
+
+    env = PursuitEvasionEnv(
+        batch_size=n_envs, k=k, sigma=sigma, p=p, seed=seed, **env_kwargs
+    )
+
+    attacker_net = NeuralAttackerNet(env.attacker_obs_dim)
+    if init_attacker_state_dict is not None:
+        attacker_net.load_state_dict(init_attacker_state_dict)
+    central_defender_net = CentralizedDefenderNet(
+        k=k, hidden=central_hidden, n_layers=central_n_layers
+    )
+    if init_central_defender_state_dict is not None:
+        central_defender_net.load_state_dict(init_central_defender_state_dict)
+    bc_warm_start = init_central_defender_state_dict is not None
+
+    log_fn(
+        f"=== alternating_train_centralized  k={k} sigma={sigma} p={p}  "
+        f"warmup={attacker_warmup_iters} alt={n_alternations}x"
+        f"(def={defender_iters}, att={attacker_iters})  "
+        f"cdef={central_hidden}x{central_n_layers}  "
+        f"sort={sort_by_distance}  bc_init={bc_warm_start}  "
+        f"B={n_envs} T={cfg.n_steps} ==="
+    )
+
+    heuristic_defender = HeuristicDefender(
+        v_defender=env.v_defender, capture_radius=env.capture_radius
+    )
+
+    all_metrics: dict[str, list] = {"warmup": [], "rounds": []}
+
+    if bc_warm_start:
+        warmup_opp = CentralizedDefender(
+            central_defender_net, env.v_defender, deterministic=False,
+            sort_by_distance=sort_by_distance,
+        )
+        warmup_opp_name = "BC-init centralized defender"
+    else:
+        warmup_opp = heuristic_defender
+        warmup_opp_name = "HeuristicDefender"
+    log_fn(f"[phase 0] attacker warmup vs {warmup_opp_name}")
+    res = train_attacker(
+        env, attacker_net, warmup_opp,
+        n_iters=attacker_warmup_iters, cfg=cfg, log_fn=log_fn,
+    )
+    all_metrics["warmup"] = res["metrics"]
+
+    attacker_snapshots: list[dict] = []
+    for r in range(n_alternations):
+        round_log: dict = {"defender": [], "attacker": []}
+
+        log_fn(f"[round {r+1}/{n_alternations} A] train centralized defender")
+        attacker_frozen = NeuralAttacker(attacker_net, env.v_attacker, deterministic=False)
+        if use_attacker_population:
+            pop_policies = [
+                HeuristicAttacker(target=env.target, v_attacker=env.v_attacker),
+                attacker_frozen,
+            ]
+            for sd in attacker_snapshots:
+                snap_net = NeuralAttackerNet(env.attacker_obs_dim)
+                snap_net.load_state_dict(sd)
+                snap_net.eval()
+                pop_policies.append(
+                    NeuralAttacker(snap_net, env.v_attacker, deterministic=True)
+                )
+            log_fn(
+                f"  defender vs population (size={len(pop_policies)}: "
+                f"heur + current att + {len(attacker_snapshots)} snapshots)"
+            )
+            population = PopulationAttacker(pop_policies, env.B, rng_seed=seed + 100 + r)
+            env.reset()
+            res_d = train_defender_centralized(
+                env, central_defender_net, attacker_frozen,
+                n_iters=defender_iters, cfg=cfg, log_fn=log_fn,
+                sort_by_distance=sort_by_distance, population=population,
+            )
+        else:
+            env.reset()
+            res_d = train_defender_centralized(
+                env, central_defender_net, attacker_frozen,
+                n_iters=defender_iters, cfg=cfg, log_fn=log_fn,
+                sort_by_distance=sort_by_distance,
+            )
+        round_log["defender"] = res_d["metrics"]
+
+        log_fn(f"[round {r+1}/{n_alternations} B] train attacker")
+        defender_frozen = CentralizedDefender(
+            central_defender_net, env.v_defender, deterministic=False,
+            sort_by_distance=sort_by_distance,
+        )
+        env.reset()
+        res_a = train_attacker(
+            env, attacker_net, defender_frozen,
+            n_iters=attacker_iters, cfg=cfg, log_fn=log_fn,
+        )
+        round_log["attacker"] = res_a["metrics"]
+        all_metrics["rounds"].append(round_log)
+
+        # Save attacker snapshot at end of round (used by next round's population).
+        if use_attacker_population:
+            attacker_snapshots.append({
+                k_: v.detach().cpu().clone()
+                for k_, v in attacker_net.state_dict().items()
+            })
+
+    if save_dir is not None:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(attacker_net.state_dict(), save_dir / "attacker.pt")
+        torch.save(central_defender_net.state_dict(), save_dir / "central_defender.pt")
+        log_fn(f"saved checkpoints → {save_dir}")
+
+    phases: list[dict] = [
+        {
+            "name": "warmup",
+            "trainee": "neural_attacker",
+            "opponent": "HeuristicDefender",
+            "n_iters": attacker_warmup_iters,
+        }
+    ]
+    for r in range(n_alternations):
+        phases.append({
+            "name": f"round_{r+1}_defender",
+            "trainee": "central_defender",
+            "opponent": "frozen_neural_attacker",
+            "n_iters": defender_iters,
+        })
+        phases.append({
+            "name": f"round_{r+1}_attacker",
+            "trainee": "neural_attacker",
+            "opponent": "frozen_central_defender",
+            "n_iters": attacker_iters,
+        })
+    env_steps_per_iter = n_envs * cfg.n_steps
+    total_iters = (
+        attacker_warmup_iters + n_alternations * (attacker_iters + defender_iters)
+    )
+    schedule = {
+        "method": "alternating_train_centralized",
+        "k": k, "sigma": sigma, "p": p, "seed": seed,
+        "n_envs": n_envs, "n_steps": cfg.n_steps,
+        "attacker_warmup_iters": attacker_warmup_iters,
+        "defender_iters": defender_iters,
+        "attacker_iters": attacker_iters,
+        "n_alternations": n_alternations,
+        "central_defender_arch": {"hidden": central_hidden, "n_layers": central_n_layers},
+        "sort_by_distance": sort_by_distance,
+        "bc_warm_start": bc_warm_start,
+        "use_attacker_population": use_attacker_population,
+        "n_attacker_snapshots": len(attacker_snapshots),
+        "phases": phases,
+        "totals": {
+            "attacker_iters": attacker_warmup_iters + n_alternations * attacker_iters,
+            "defender_iters": n_alternations * defender_iters,
+            "env_steps_per_iter": env_steps_per_iter,
+            "total_env_steps": total_iters * env_steps_per_iter,
+        },
+    }
+
+    return {
+        "attacker_net": attacker_net,
+        "central_defender_net": central_defender_net,
+        "metrics": all_metrics,
+        "env_meta": env.metadata(),
+        "schedule": schedule,
+    }
+
+
+# ============================================================================
 # Independent training: each side trains against a *fixed heuristic* opponent.
 # No alternation, no oscillation — just two best-response policies.
 # ============================================================================
@@ -734,6 +945,7 @@ def train_defender_centralized(
     log_every: int = 10,
     log_fn=print,
     population: PopulationAttacker | None = None,
+    sort_by_distance: bool = False,
 ) -> dict:
     """PPO-train the centralized defender (one brain, k×2-D action) against
     a fixed attacker policy.
@@ -741,6 +953,11 @@ def train_defender_centralized(
     If ``population`` is supplied, it is used as the attacker for actions and
     is reshuffled each time envs reset — this gives the defender opponent
     diversity (mixture of attacker snapshots / strengths).
+
+    If ``sort_by_distance`` is True, defenders are reordered by distance to
+    the attacker before each forward pass (closest = slot 0); the policy
+    therefore sees a permutation-equivariant view of the team and the network
+    output is unsorted back to env order before stepping.
     """
     device = device or torch.device("cpu")
     if optimizer is None:
@@ -753,8 +970,14 @@ def train_defender_centralized(
     action_dim = 2 * k
     T = cfg.n_steps
 
+    def _build_obs_with_perm(env_):
+        if sort_by_distance:
+            return CentralizedDefenderNet.build_sorted_obs(env_)
+        return CentralizedDefenderNet.build_obs(env_), None
+
     env.reset()
-    next_obs = torch.as_tensor(CentralizedDefenderNet.build_obs(env), device=device)
+    next_obs_np, next_perm = _build_obs_with_perm(env)
+    next_obs = torch.as_tensor(next_obs_np, device=device)
     next_done = torch.zeros(B, device=device)
     if population is not None:
         population.reshuffle()
@@ -786,9 +1009,10 @@ def train_defender_centralized(
 
             opp = population if population is not None else attacker_policy
             a_action = opp.act(env)
-            d_action_np = PursuitEvasionEnv._clip_speed(
-                action.cpu().numpy().reshape(B, k, 2), env.v_defender
-            )
+            d_action_np = action.cpu().numpy().reshape(B, k, 2)
+            if next_perm is not None:
+                d_action_np = CentralizedDefenderNet.unsort_action(d_action_np, next_perm)
+            d_action_np = PursuitEvasionEnv._clip_speed(d_action_np, env.v_defender)
             res = env.step(a_action, d_action_np)
 
             act_buf[t] = action
@@ -804,9 +1028,8 @@ def train_defender_centralized(
                 if population is not None:
                     population.reshuffle(res.just_done)
 
-            next_obs = torch.as_tensor(
-                CentralizedDefenderNet.build_obs(env), device=device
-            )
+            next_obs_np, next_perm = _build_obs_with_perm(env)
+            next_obs = torch.as_tensor(next_obs_np, device=device)
             next_done = torch.as_tensor(
                 res.just_done.astype(np.float32), device=device
             )
@@ -879,6 +1102,7 @@ def sequential_train(
     attacker_n_layers: int = 2,
     central_hidden: int = 256,
     central_n_layers: int = 3,
+    sort_by_distance: bool = False,
     seed: int = 0,
     env_kwargs: dict | None = None,
     save_dir: Path | str | None = None,
@@ -988,6 +1212,7 @@ def sequential_train(
         cfg=cfg,
         log_fn=log_fn,
         population=population,
+        sort_by_distance=sort_by_distance,
     )
 
     if save_dir is not None:
@@ -1035,6 +1260,7 @@ def sequential_train(
         ],
         "attacker_arch": {"hidden": attacker_hidden, "n_layers": attacker_n_layers},
         "central_defender_arch": {"hidden": central_hidden, "n_layers": central_n_layers},
+        "sort_by_distance": sort_by_distance,
         "totals": {
             "attacker_iters": attacker_warmup_iters,
             "central_defender_iters": central_defender_iters,

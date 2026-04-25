@@ -1,10 +1,12 @@
-# Centralized-defender training config.
-# Phase A: attacker (256x2 MLP) vs heuristic defender (300 iters, snapshotting)
-# Phase B: centralized defender (256x3 MLP) vs population of attackers (800 iters)
+# Centralized-defender training, sweep over k=1..5 at sigma=0.7, p=0.5,
+# with defenders sorted by distance to the attacker (closest = slot 0).
+# Mirrors config_vultr_central_k1_5_s07_p1_sorted.yaml; only p changed
+# from 1.0 -> 0.5 so each in-range shot has 50% kill prob and missed
+# shots stun the defender for stun_steps=15.
 sweep:
-  k_values: [1, 2, 3, 4, 5, 6]
-  sigma: 1.0
-  p: 0.7
+  k_values: [1, 2, 3, 4, 5]
+  sigma: 0.7
+  p: 0.5
 
 env:
   dt: 0.02
@@ -28,6 +30,7 @@ training:
   attacker_n_layers: 2
   central_hidden: 256
   central_n_layers: 3
+  sort_by_distance: true
   n_envs: 256
   n_steps: 128
   n_epochs: 4

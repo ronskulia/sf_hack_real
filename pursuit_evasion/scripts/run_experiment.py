@@ -85,23 +85,24 @@ def _heuristic_cell(args: tuple) -> dict:
 def _rl_cell(args: tuple) -> dict:
     """Train one (k, σ, p) cell and evaluate the resulting policies."""
     cell_id, k, sigma, p, training_cfg, env_kwargs, n_eval, n_anim, seed, out_root = args
-    # Limit thread count so parallel cells don't fight over BLAS threads.
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
-    os.environ.setdefault("MKL_NUM_THREADS", "1")
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    threads = int(os.environ.get("WORKER_THREADS", "1"))
+    os.environ.setdefault("OMP_NUM_THREADS", str(threads))
+    os.environ.setdefault("MKL_NUM_THREADS", str(threads))
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", str(threads))
     import torch
 
-    torch.set_num_threads(1)
+    torch.set_num_threads(threads)
 
     from src.env import PursuitEvasionEnv
     from src.policies import (
+        CentralizedDefender,
         HeuristicAttacker,
         HeuristicDefender,
         NeuralAttacker,
         NeuralDefender,
     )
     from src.rollout import evaluate
-    from src.train import PPOConfig, alternating_train
+    from src.train import PPOConfig, alternating_train, alternating_train_centralized
     from src.animate import run_episode, save_animation
 
     cell_dir = Path(out_root) / "checkpoints" / f"k{k}_sigma{sigma}_p{p}"
@@ -123,29 +124,60 @@ def _rl_cell(args: tuple) -> dict:
         vf_coef=training_cfg["vf_coef"],
         max_grad_norm=training_cfg["max_grad_norm"],
     )
+    defender_type = str(training_cfg.get("defender_type", "shared")).lower()
     t0 = time.perf_counter()
-    res = alternating_train(
-        k=k,
-        sigma=sigma,
-        p=p,
-        cfg=cfg,
-        n_envs=training_cfg["n_envs"],
-        attacker_warmup_iters=training_cfg["attacker_warmup_iters"],
-        defender_iters=training_cfg["defender_iters"],
-        attacker_iters=training_cfg["attacker_iters"],
-        n_alternations=training_cfg["n_alternations"],
-        seed=seed,
-        env_kwargs=env_kwargs,
-        save_dir=cell_dir,
-        log_fn=log,
-    )
+    if defender_type == "centralized":
+        res = alternating_train_centralized(
+            k=k,
+            sigma=sigma,
+            p=p,
+            cfg=cfg,
+            n_envs=training_cfg["n_envs"],
+            attacker_warmup_iters=training_cfg["attacker_warmup_iters"],
+            defender_iters=training_cfg["defender_iters"],
+            attacker_iters=training_cfg["attacker_iters"],
+            n_alternations=training_cfg["n_alternations"],
+            seed=seed,
+            central_hidden=int(training_cfg.get("central_hidden", 256)),
+            central_n_layers=int(training_cfg.get("central_n_layers", 3)),
+            env_kwargs=env_kwargs,
+            save_dir=cell_dir,
+            log_fn=log,
+        )
+    elif defender_type == "shared":
+        res = alternating_train(
+            k=k,
+            sigma=sigma,
+            p=p,
+            cfg=cfg,
+            n_envs=training_cfg["n_envs"],
+            attacker_warmup_iters=training_cfg["attacker_warmup_iters"],
+            defender_iters=training_cfg["defender_iters"],
+            attacker_iters=training_cfg["attacker_iters"],
+            n_alternations=training_cfg["n_alternations"],
+            seed=seed,
+            env_kwargs=env_kwargs,
+            save_dir=cell_dir,
+            log_fn=log,
+        )
+    else:
+        raise ValueError(
+            f"unknown defender_type={defender_type!r} (expected 'shared' or 'centralized')"
+        )
     train_elapsed = time.perf_counter() - t0
     log(f"train_elapsed={train_elapsed:.1f}s")
 
     # Evaluate (final RL policies) — also use sampling=False for stable rollouts
     env_meta = res["env_meta"]
     a_pol = NeuralAttacker(res["attacker_net"], env_meta["v_attacker"], deterministic=True)
-    d_pol = NeuralDefender(res["defender_net"], env_meta["v_defender"], deterministic=True)
+    if defender_type == "centralized":
+        d_pol = CentralizedDefender(
+            res["central_defender_net"], env_meta["v_defender"], deterministic=True
+        )
+    else:
+        d_pol = NeuralDefender(
+            res["defender_net"], env_meta["v_defender"], deterministic=True
+        )
     eval_res = evaluate(
         k=k,
         sigma=sigma,
@@ -166,9 +198,17 @@ def _rl_cell(args: tuple) -> dict:
             batch_size=1, k=k, sigma=sigma, p=p, seed=seed + 1000 + i, **env_kwargs
         )
         a_pol1 = NeuralAttacker(res["attacker_net"], env_anim.v_attacker, deterministic=False)
-        d_pol1 = NeuralDefender(res["defender_net"], env_anim.v_defender, deterministic=False)
+        if defender_type == "centralized":
+            d_pol1 = CentralizedDefender(
+                res["central_defender_net"], env_anim.v_defender, deterministic=False
+            )
+        else:
+            d_pol1 = NeuralDefender(
+                res["defender_net"], env_anim.v_defender, deterministic=False
+            )
         h = run_episode(env_anim, a_pol1, d_pol1)
-        out_anim = anim_dir / f"rl_k{k}_sigma{sigma}_p{p}_ep{i}.mp4"
+        prefix = "rl_central" if defender_type == "centralized" else "rl"
+        out_anim = anim_dir / f"{prefix}_k{k}_sigma{sigma}_p{p}_ep{i}.mp4"
         save_animation(h, env_anim.metadata(), out_anim)
         log(f"saved anim → {out_anim.name} ({h['steps']} steps, outcome={h['outcome']})")
 
@@ -195,7 +235,12 @@ def _rl_cell(args: tuple) -> dict:
                 })
 
     training_info = {
-        "method": "alternating_train",
+        "method": (
+            "alternating_train_centralized"
+            if defender_type == "centralized"
+            else "alternating_train"
+        ),
+        "defender_type": defender_type,
         "seed": seed,
         "n_envs": training_cfg["n_envs"],
         "ppo_config": asdict(cfg),
@@ -226,6 +271,9 @@ def main() -> None:
     parser.add_argument("--config", type=str, default=str(_REPO_ROOT / "config.yaml"))
     parser.add_argument("--workers", type=int, default=0,
                         help="Parallel processes for the RL sweep (0 = auto = min(n_cells, cpu_count)).")
+    parser.add_argument("--threads-per-worker", type=int, default=1,
+                        help="BLAS / torch threads per worker process. "
+                        "workers * threads_per_worker should not exceed cpu_count.")
     parser.add_argument("--out", type=str, default=str(_REPO_ROOT / "outputs"),
                         help="Output root.")
     parser.add_argument("--skip-rl", action="store_true",
@@ -233,6 +281,7 @@ def main() -> None:
     parser.add_argument("--skip-heuristic", action="store_true",
                         help="Skip the heuristic baseline (for quick RL-only runs).")
     args = parser.parse_args()
+    os.environ["WORKER_THREADS"] = str(args.threads_per_worker)
 
     out_root = Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -250,6 +299,7 @@ def main() -> None:
     env_kwargs = {
         "dt": config["env"]["dt"],
         "max_steps": config["env"]["max_steps"],
+        "stun_steps": int(config["env"].get("stun_steps", 0)),
         "capture_radius": config["env"]["capture_radius"],
         "target_radius": config["env"]["target_radius"],
         "target_pos": tuple(config["env"]["target_pos"]),

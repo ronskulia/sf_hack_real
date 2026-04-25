@@ -205,6 +205,126 @@ class HeuristicDefender:
         return (direction / np.maximum(norm, 1e-8) * self.v).astype(np.float32)
 
 
+class HeuristicOrbitalDefender:
+    """One closest-to-attacker chaser + spread-orbit goalies.
+
+    Each defender ``i`` has a fixed home angle ``θ_i = 2π·i/k`` on a guard
+    ring of radius ``orbit_radius`` centered on the target. Per step, the
+    defender currently closest to the attacker is tagged as the chaser and
+    runs an Apollonius intercept toward the attacker; every other defender
+    moves toward its home angle on the orbit.
+
+    Stateless — role assignment is per-step, so as the attacker moves the
+    chaser role can swap between defenders. With ``k`` defenders evenly
+    spread, there is always a defender within ~π/k radians of any threat
+    direction, so the closest-defender role is geometrically reasonable.
+
+    Parameters
+    ----------
+    v_defender : float
+        Max defender speed.
+    target_pos : sequence of float
+    orbit_radius : float
+        Radius of the guard ring around the target. Defaults to 0.20
+        (between the env's inner=0.15 and outer=0.35 constraint radii).
+    capture_radius : float
+        Used only to tighten aim when very close to the attacker (no spread).
+    """
+
+    def __init__(
+        self,
+        v_defender: float,
+        target_pos: tuple[float, float] = (0.5, 0.5),
+        orbit_radius: float = 0.20,
+        capture_radius: float = 0.03,
+        n_chasers: int = 1,
+    ) -> None:
+        self.v = float(v_defender)
+        self.target = np.asarray(target_pos, dtype=np.float32)
+        self.orbit_radius = float(orbit_radius)
+        self.r_cap = float(capture_radius)
+        self.n_chasers = int(n_chasers)
+
+    def act(self, env: PursuitEvasionEnv) -> np.ndarray:
+        B, k = env.B, env.k
+        attacker_pos = env.attacker_pos       # (B, 2)
+        attacker_vel = env.attacker_vel       # (B, 2)
+        defender_pos = env.defender_pos       # (B, k, 2)
+        n_chasers = max(1, min(self.n_chasers, k))
+        n_goalies = k - n_chasers
+
+        # 1. Pick the ``n_chasers`` closest defenders per env as chasers.
+        rel_to_att = attacker_pos[:, None, :] - defender_pos  # (B, k, 2)
+        d_sq = (rel_to_att ** 2).sum(axis=-1)                  # (B, k)
+        if n_chasers >= k:
+            chaser_mask = np.ones((B, k), dtype=bool)
+        else:
+            chaser_idx_partial = np.argpartition(d_sq, n_chasers - 1, axis=-1)[:, :n_chasers]
+            chaser_mask = np.zeros((B, k), dtype=bool)
+            np.put_along_axis(chaser_mask, chaser_idx_partial, True, axis=-1)
+
+        # 2. Apollonius intercept aim (used by the chaser slot).
+        v_a_sq = (attacker_vel ** 2).sum(axis=-1, keepdims=True)  # (B, 1)
+        d_dot_va = (rel_to_att * attacker_vel[:, None, :]).sum(axis=-1)  # (B, k)
+        a_coef = np.broadcast_to(self.v ** 2 - v_a_sq, (B, k))
+        b_coef = -2.0 * d_dot_va
+        c_coef = -d_sq
+        disc = b_coef ** 2 - 4.0 * a_coef * c_coef
+        a_safe = np.where(np.abs(a_coef) < 1e-8, 1e-8, a_coef)
+        sqrt_disc = np.sqrt(np.maximum(disc, 0.0))
+        t1 = (-b_coef + sqrt_disc) / (2.0 * a_safe)
+        t2 = (-b_coef - sqrt_disc) / (2.0 * a_safe)
+        t_pos1 = np.where(t1 > 0, t1, np.inf)
+        t_pos2 = np.where(t2 > 0, t2, np.inf)
+        t_chosen = np.minimum(t_pos1, t_pos2)
+        valid = (disc >= 0) & np.isfinite(t_chosen)
+        t_chosen = np.where(valid, t_chosen, 0.0)
+        intercept = attacker_pos[:, None, :] + attacker_vel[:, None, :] * t_chosen[..., None]
+        intercept = np.where(valid[..., None], intercept, attacker_pos[:, None, :])  # (B, k, 2)
+
+        # 3. Goalie home positions and assignment (skipped when no goalies).
+        if n_goalies > 0:
+            thetas = 2.0 * np.pi * np.arange(k, dtype=np.float32) / max(k, 1)  # (k,)
+            ring_offsets = (
+                np.stack([np.cos(thetas), np.sin(thetas)], axis=-1) * self.orbit_radius
+            )  # (k, 2)
+            home_pos_global = self.target[None, :] + ring_offsets  # (k, 2)
+
+            # Greedy nearest-home assignment for non-chasers — each goalie goes
+            # to the closest *unassigned* home so defenders don't cross paths.
+            diff = (
+                defender_pos[:, :, None, :]              # (B, k, 1, 2)
+                - home_pos_global[None, None, :, :]      # (1, 1, k, 2)
+            )
+            cost = np.linalg.norm(diff, axis=-1).copy()  # (B, k, k)
+            cost = np.where(chaser_mask[:, :, None], np.inf, cost)  # mask all chasers
+            defender_home_idx = -np.ones((B, k), dtype=np.int64)
+            batch_idx = np.arange(B)
+            for _ in range(n_goalies):
+                flat = cost.reshape(B, k * k)
+                pick = np.argmin(flat, axis=-1)
+                d_pick = pick // k
+                h_pick = pick % k
+                defender_home_idx[batch_idx, d_pick] = h_pick
+                cost[batch_idx, d_pick, :] = np.inf
+                cost[batch_idx, :, h_pick] = np.inf
+
+            safe_home_idx = np.where(defender_home_idx < 0, 0, defender_home_idx)
+            home_for_def = home_pos_global[safe_home_idx]    # (B, k, 2)
+            aim = np.where(chaser_mask[..., None], intercept, home_for_def)
+        else:
+            # All defenders chase: aim = intercept everywhere.
+            aim = intercept
+
+        # 6. Unit-velocity at full speed toward aim, but park when within ~1mm
+        #    of the aim point (avoids the divide-by-tiny wobble at home).
+        direction = aim - defender_pos
+        norm = np.linalg.norm(direction, axis=-1, keepdims=True)
+        unit = direction / np.maximum(norm, 1e-8)
+        moving = (norm > 1e-3).astype(np.float32)
+        return (unit * self.v * moving).astype(np.float32)
+
+
 class HeuristicDefenderTeam:
     """Team-aware heuristic defender: a few chasers + goalies on a guard ring.
 
@@ -502,17 +622,65 @@ class CentralizedDefenderNet(nn.Module):
 
     @staticmethod
     def build_obs(env: PursuitEvasionEnv) -> np.ndarray:
-        """Build the centralized observation tensor of shape ``(B, 4 + 4k)``."""
+        """Build the centralized observation tensor of shape ``(B, 4 + 4k)``.
+
+        The attacker position slot uses :meth:`PursuitEvasionEnv.observed_attacker_pos`
+        — true position when noise is disabled (default), smoothly noised and
+        distance-gated otherwise. Defenders therefore see a "fog of war"
+        belief that sharpens as the team closes in.
+        """
         B, k = env.B, env.k
         return np.concatenate(
             [
-                env.attacker_pos,
+                env.observed_attacker_pos(),
                 env.attacker_vel,
                 env.defender_pos.reshape(B, 2 * k),
                 env.defender_vel.reshape(B, 2 * k),
             ],
             axis=-1,
         ).astype(np.float32)
+
+    @staticmethod
+    def build_sorted_obs(env: PursuitEvasionEnv) -> tuple[np.ndarray, np.ndarray]:
+        """Build centralized obs with defenders sorted by distance to attacker.
+
+        Sorting uses the *true* attacker position so the slot ordering is
+        unambiguous; only the attacker-position observation is noised.
+
+        Returns
+        -------
+        sorted_obs : np.ndarray, shape (B, 4 + 4k), float32
+        perm : np.ndarray, shape (B, k), int64
+            ``perm[b, j]`` is the *original* index of the j-th closest defender
+            in env b. Use :meth:`unsort_action` with this perm to convert
+            network outputs (which are in sorted order) back to env order.
+        """
+        B, k = env.B, env.k
+        rel = env.defender_pos - env.attacker_pos[:, None, :]  # (B, k, 2)
+        d_sq = (rel ** 2).sum(axis=-1)  # (B, k)
+        perm = np.argsort(d_sq, axis=-1, kind="stable").astype(np.int64)  # (B, k)
+        sorted_def_pos = np.take_along_axis(env.defender_pos, perm[..., None], axis=1)
+        sorted_def_vel = np.take_along_axis(env.defender_vel, perm[..., None], axis=1)
+        sorted_obs = np.concatenate(
+            [
+                env.observed_attacker_pos(),
+                env.attacker_vel,
+                sorted_def_pos.reshape(B, 2 * k),
+                sorted_def_vel.reshape(B, 2 * k),
+            ],
+            axis=-1,
+        ).astype(np.float32)
+        return sorted_obs, perm
+
+    @staticmethod
+    def unsort_action(action_sorted: np.ndarray, perm: np.ndarray) -> np.ndarray:
+        """Map (B, k, 2) actions in sorted order back to env (original) order.
+
+        ``original[b, i] = sorted[b, inv_perm[b, i]]`` where
+        ``inv_perm = argsort(perm)``.
+        """
+        inv_perm = np.argsort(perm, axis=-1)  # (B, k)
+        return np.take_along_axis(action_sorted, inv_perm[..., None], axis=1)
 
     def forward(
         self, obs: torch.Tensor
@@ -526,7 +694,15 @@ class CentralizedDefenderNet(nn.Module):
 
 
 class CentralizedDefender:
-    """Inference-only wrapper for :class:`CentralizedDefenderNet`."""
+    """Inference-only wrapper for :class:`CentralizedDefenderNet`.
+
+    If ``sort_by_distance`` is True, defenders are reordered by distance to
+    the attacker before each forward pass (closest = slot 0). The network
+    output is then unsorted back to env-defender order before being issued.
+    This makes the policy effectively permutation-invariant — slot 0 always
+    means "the closest defender" — and avoids the failure mode where the
+    centralized net binds a fixed slot to "the chaser".
+    """
 
     def __init__(
         self,
@@ -534,15 +710,21 @@ class CentralizedDefender:
         v_defender: float,
         *,
         deterministic: bool = True,
+        sort_by_distance: bool = False,
     ) -> None:
         self.net = net
         self.v = float(v_defender)
         self.deterministic = bool(deterministic)
+        self.sort_by_distance = bool(sort_by_distance)
         self.k = net.k
 
     @torch.no_grad()
     def act(self, env: PursuitEvasionEnv) -> np.ndarray:
-        obs = CentralizedDefenderNet.build_obs(env)
+        if self.sort_by_distance:
+            obs, perm = CentralizedDefenderNet.build_sorted_obs(env)
+        else:
+            obs = CentralizedDefenderNet.build_obs(env)
+            perm = None
         obs_t = torch.from_numpy(obs)
         mean, logstd, _ = self.net(obs_t)
         if self.deterministic:
@@ -551,6 +733,8 @@ class CentralizedDefender:
             std = logstd.exp()
             action = torch.normal(mean, std)
         action_np = action.numpy().reshape(env.B, env.k, 2)
+        if perm is not None:
+            action_np = CentralizedDefenderNet.unsort_action(action_np, perm)
         return PursuitEvasionEnv._clip_speed(action_np, self.v)
 
 

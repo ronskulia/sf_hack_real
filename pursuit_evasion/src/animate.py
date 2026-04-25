@@ -67,8 +67,18 @@ def run_episode(
     if reset:
         env.reset()
 
+    def _gate_now() -> float:
+        if env.noise_sigma <= 0.0:
+            return 0.0
+        rel = env.defender_pos[0] - env.attacker_pos[0][None, :]
+        md = float(np.linalg.norm(rel, axis=-1).min())
+        return float(env._noise_gate(np.asarray([md]))[0])
+
     a_traj: list[np.ndarray] = [env.attacker_pos[0].copy()]
     d_traj: list[np.ndarray] = [env.defender_pos[0].copy()]
+    cd_traj: list[np.ndarray] = [env.cooldown[0].copy()]
+    obs_a_traj: list[np.ndarray] = [env.observed_attacker_pos()[0].copy()]
+    gate_traj: list[float] = [_gate_now()]
 
     while not bool(env.done[0]):
         a_action = attacker_policy.act(env)
@@ -76,6 +86,9 @@ def run_episode(
         env.step(a_action, d_action)
         a_traj.append(env.attacker_pos[0].copy())
         d_traj.append(env.defender_pos[0].copy())
+        cd_traj.append(env.cooldown[0].copy())
+        obs_a_traj.append(env.observed_attacker_pos()[0].copy())
+        gate_traj.append(_gate_now())
         # Safety: never loop past max_steps.
         if int(env.step_count[0]) > env.max_steps + 1:
             break
@@ -83,6 +96,9 @@ def run_episode(
     return {
         "attacker_pos": np.stack(a_traj, axis=0),
         "defender_pos": np.stack(d_traj, axis=0),
+        "cooldown": np.stack(cd_traj, axis=0),
+        "obs_attacker_pos": np.stack(obs_a_traj, axis=0),
+        "noise_gate": np.asarray(gate_traj, dtype=np.float32),
         "outcome": int(env.outcome[0]),
         "steps": int(env.step_count[0]),
     }
@@ -124,6 +140,15 @@ def save_animation(
 
     a_traj: np.ndarray = history["attacker_pos"]  # (T+1, 2)
     d_traj: np.ndarray = history["defender_pos"]  # (T+1, k, 2)
+    cd_traj: np.ndarray = history.get(
+        "cooldown", np.zeros((a_traj.shape[0], d_traj.shape[1]), dtype=np.int32)
+    )  # (T+1, k); zeros for legacy histories
+    obs_a_traj: np.ndarray = history.get("obs_attacker_pos", a_traj)  # (T+1, 2)
+    gate_traj: np.ndarray = history.get(
+        "noise_gate", np.zeros(a_traj.shape[0], dtype=np.float32)
+    )
+    noise_sigma: float = float(env_meta.get("noise_sigma", 0.0))
+    has_uncertainty: bool = noise_sigma > 0.0
     T = a_traj.shape[0]
     k = d_traj.shape[1]
     outcome_str = _OUTCOME_LABEL.get(int(history["outcome"]), "running")
@@ -139,7 +164,13 @@ def save_animation(
         f"k={env_meta['k']}  σ={env_meta['sigma']:.2f}  p={env_meta['p']:.2f}  "
         f"| {outcome_str}  ({history['steps']} steps)"
     )
-    ax.set_title(title, fontsize=11)
+    if has_uncertainty:
+        title += (
+            f"  · obs_noise σ={noise_sigma:.2f}"
+            f"  r=[{env_meta.get('noise_r_clean', 0):.2f},"
+            f"{env_meta.get('noise_r_full', 0):.2f}]"
+        )
+    ax.set_title(title, fontsize=10)
 
     target = env_meta["target_pos"]
     target_circle = plt.Circle(
@@ -163,28 +194,106 @@ def save_animation(
     (attacker_marker,) = ax.plot(
         [], [], "^", color="red", markersize=12, zorder=4, label="attacker"
     )
-    (defender_markers,) = ax.plot(
-        [], [], "o", color="blue", markersize=10, zorder=4, label=f"defenders ({k})"
+    # Per-defender scatter so we can recolor individual defenders when stunned.
+    defender_scatter = ax.scatter(
+        np.zeros(k),
+        np.zeros(k),
+        s=100,
+        c=["blue"] * k,
+        edgecolors="black",
+        linewidths=0.6,
+        zorder=4,
+        label=f"defenders ({k})",
     )
     (attacker_trail,) = ax.plot([], [], "-", color="red", alpha=0.45, linewidth=1.4)
     defender_trails = [
         ax.plot([], [], "-", color="blue", alpha=0.3, linewidth=1.0)[0]
         for _ in range(k)
     ]
+
+    # ----- Defender's-eye-view of the attacker (only drawn if noise enabled) -----
+    if has_uncertainty:
+        # Translucent uncertainty halo centered on the perceived position.
+        # Radius scales with the gate (close ⇒ small / no halo).
+        uncertainty_halo = plt.Circle(
+            (0.0, 0.0), 1e-6,
+            facecolor="orange", edgecolor="darkorange",
+            alpha=0.18, linewidth=1.0, linestyle="--", zorder=2,
+        )
+        ax.add_patch(uncertainty_halo)
+        # Ghost marker: hollow diamond at the perceived attacker pos.
+        (ghost_marker,) = ax.plot(
+            [], [], marker="D", color="orange",
+            markerfacecolor="none", markeredgecolor="orange",
+            markersize=11, markeredgewidth=1.6,
+            zorder=4, label="defender belief",
+        )
+        # Dashed line linking truth to belief.
+        (belief_link,) = ax.plot(
+            [], [], "--", color="orange", alpha=0.55, linewidth=0.9, zorder=3,
+        )
+        # Trail of past perceived positions.
+        (ghost_trail,) = ax.plot(
+            [], [], "-", color="orange", alpha=0.30, linewidth=1.0, zorder=2,
+        )
+        # Reference rings around the TRUE attacker showing where uncertainty
+        # transitions from "clean" to "full". Drawn faintly so they don't
+        # dominate the frame.
+        r_clean = float(env_meta.get("noise_r_clean", 0.0))
+        r_full = float(env_meta.get("noise_r_full", 0.0))
+        info_ring_clean = plt.Circle(
+            (0.0, 0.0), r_clean,
+            facecolor="none", edgecolor="green",
+            alpha=0.25, linewidth=1.0, linestyle=":", zorder=1,
+        )
+        info_ring_full = plt.Circle(
+            (0.0, 0.0), r_full,
+            facecolor="none", edgecolor="orange",
+            alpha=0.18, linewidth=1.0, linestyle=":", zorder=1,
+        )
+        ax.add_patch(info_ring_clean)
+        ax.add_patch(info_ring_full)
+        # Live readout of current uncertainty magnitude.
+        info_text = ax.text(
+            0.02, 0.97, "", transform=ax.transAxes,
+            fontsize=9, verticalalignment="top",
+            bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=2.0),
+            zorder=10,
+        )
+    else:
+        uncertainty_halo = None
+        ghost_marker = None
+        belief_link = None
+        ghost_trail = None
+        info_ring_clean = None
+        info_ring_full = None
+        info_text = None
+
     ax.legend(loc="upper right", fontsize=9)
+
+    extra_artists = []
+    if has_uncertainty:
+        extra_artists = [
+            uncertainty_halo, ghost_marker, belief_link, ghost_trail,
+            info_ring_clean, info_ring_full, info_text,
+        ]
 
     def _init() -> tuple:
         return (
             attacker_marker,
-            defender_markers,
+            defender_scatter,
             attacker_trail,
             *defender_trails,
             *capture_circles,
+            *extra_artists,
         )
 
     def _update(frame: int) -> tuple:
         attacker_marker.set_data([a_traj[frame, 0]], [a_traj[frame, 1]])
-        defender_markers.set_data(d_traj[frame, :, 0], d_traj[frame, :, 1])
+        defender_scatter.set_offsets(d_traj[frame])
+        stunned = cd_traj[frame] > 0  # (k,)
+        marker_colors = np.where(stunned, "lightgray", "blue")
+        defender_scatter.set_facecolors(marker_colors)
         start = max(0, frame - trail_len)
         attacker_trail.set_data(a_traj[start : frame + 1, 0], a_traj[start : frame + 1, 1])
         for i, trail in enumerate(defender_trails):
@@ -193,12 +302,40 @@ def save_animation(
             )
         for i, circle in enumerate(capture_circles):
             circle.center = (float(d_traj[frame, i, 0]), float(d_traj[frame, i, 1]))
+            circle.set_color("lightgray" if stunned[i] else "blue")
+            circle.set_alpha(0.18 if stunned[i] else 0.12)
+        if has_uncertainty:
+            ox, oy = float(obs_a_traj[frame, 0]), float(obs_a_traj[frame, 1])
+            tx, ty = float(a_traj[frame, 0]), float(a_traj[frame, 1])
+            g = float(gate_traj[frame])
+            err = float(np.hypot(ox - tx, oy - ty))
+            # Halo radius: actual current error (what the defender is off by).
+            # Floor at a small value so it remains visible even when tiny.
+            halo_r = max(err, 1e-3)
+            uncertainty_halo.center = (ox, oy)
+            uncertainty_halo.set_radius(halo_r)
+            uncertainty_halo.set_alpha(0.06 + 0.30 * g)
+            ghost_marker.set_data([ox], [oy])
+            ghost_marker.set_alpha(0.20 + 0.75 * g)
+            belief_link.set_data([tx, ox], [ty, oy])
+            belief_link.set_alpha(0.10 + 0.55 * g)
+            ghost_trail.set_data(
+                obs_a_traj[start : frame + 1, 0],
+                obs_a_traj[start : frame + 1, 1],
+            )
+            info_ring_clean.center = (tx, ty)
+            info_ring_full.center = (tx, ty)
+            info_text.set_text(
+                f"gate={g:.2f}   err={err:.3f}\n"
+                f"σ_max={noise_sigma:.2f}"
+            )
         return (
             attacker_marker,
-            defender_markers,
+            defender_scatter,
             attacker_trail,
             *defender_trails,
             *capture_circles,
+            *extra_artists,
         )
 
     anim = manim.FuncAnimation(
