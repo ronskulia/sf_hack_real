@@ -13,6 +13,7 @@ env:
   v_attacker: 1.0
   defender_inner_radius: 0.15
   defender_outer_radius: 0.35
+  defender_sensor_epsilon: 0.05
   attacker_danger_radius: 0.15
   attacker_shaping: 0.01
   defender_shaping: 0.01

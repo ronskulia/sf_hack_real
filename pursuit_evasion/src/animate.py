@@ -59,8 +59,9 @@ def run_episode(
     Returns
     -------
     dict
-        Keys: ``attacker_pos`` (T+1, 2), ``defender_pos`` (T+1, k, 2),
-        ``outcome`` (int), ``steps`` (int).
+        Keys: ``attacker_pos`` (T+1, 2),
+        ``defender_perceived_attacker_pos`` (T+1, 2),
+        ``defender_pos`` (T+1, k, 2), ``outcome`` (int), ``steps`` (int).
     """
     if env.B != 1:
         raise ValueError(f"run_episode expects env.B == 1, got {env.B}")
@@ -68,6 +69,9 @@ def run_episode(
         env.reset()
 
     a_traj: list[np.ndarray] = [env.attacker_pos[0].copy()]
+    perceived_a_traj: list[np.ndarray] = [
+        env.defender_perceived_attacker_pos[0].copy()
+    ]
     d_traj: list[np.ndarray] = [env.defender_pos[0].copy()]
 
     while not bool(env.done[0]):
@@ -75,6 +79,7 @@ def run_episode(
         d_action = defender_policy.act(env)
         env.step(a_action, d_action)
         a_traj.append(env.attacker_pos[0].copy())
+        perceived_a_traj.append(env.defender_perceived_attacker_pos[0].copy())
         d_traj.append(env.defender_pos[0].copy())
         # Safety: never loop past max_steps.
         if int(env.step_count[0]) > env.max_steps + 1:
@@ -82,6 +87,7 @@ def run_episode(
 
     return {
         "attacker_pos": np.stack(a_traj, axis=0),
+        "defender_perceived_attacker_pos": np.stack(perceived_a_traj, axis=0),
         "defender_pos": np.stack(d_traj, axis=0),
         "outcome": int(env.outcome[0]),
         "steps": int(env.step_count[0]),
@@ -123,6 +129,9 @@ def save_animation(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     a_traj: np.ndarray = history["attacker_pos"]  # (T+1, 2)
+    perceived_a_traj: np.ndarray = np.asarray(
+        history.get("defender_perceived_attacker_pos", a_traj), dtype=np.float32
+    )
     d_traj: np.ndarray = history["defender_pos"]  # (T+1, k, 2)
     T = a_traj.shape[0]
     k = d_traj.shape[1]
@@ -137,6 +146,7 @@ def save_animation(
     ax.grid(True, linestyle=":", alpha=0.3)
     title = (
         f"k={env_meta['k']}  σ={env_meta['sigma']:.2f}  p={env_meta['p']:.2f}  "
+        f"ε={env_meta.get('defender_sensor_epsilon', 0.0):.3f}  "
         f"| {outcome_str}  ({history['steps']} steps)"
     )
     ax.set_title(title, fontsize=11)
@@ -161,12 +171,28 @@ def save_animation(
         capture_circles.append(c)
 
     (attacker_marker,) = ax.plot(
-        [], [], "^", color="red", markersize=12, zorder=4, label="attacker"
+        [], [], "^", color="red", markersize=12, zorder=5, label="true attacker"
+    )
+    (perceived_attacker_marker,) = ax.plot(
+        [],
+        [],
+        "x",
+        color="darkorange",
+        markersize=10,
+        markeredgewidth=2.0,
+        zorder=4,
+        label="perceived attacker",
     )
     (defender_markers,) = ax.plot(
         [], [], "o", color="blue", markersize=10, zorder=4, label=f"defenders ({k})"
     )
     (attacker_trail,) = ax.plot([], [], "-", color="red", alpha=0.45, linewidth=1.4)
+    (perceived_attacker_trail,) = ax.plot(
+        [], [], "--", color="darkorange", alpha=0.35, linewidth=1.1
+    )
+    (perception_error_line,) = ax.plot(
+        [], [], ":", color="darkorange", alpha=0.55, linewidth=1.0
+    )
     defender_trails = [
         ax.plot([], [], "-", color="blue", alpha=0.3, linewidth=1.0)[0]
         for _ in range(k)
@@ -176,17 +202,31 @@ def save_animation(
     def _init() -> tuple:
         return (
             attacker_marker,
+            perceived_attacker_marker,
             defender_markers,
             attacker_trail,
+            perceived_attacker_trail,
+            perception_error_line,
             *defender_trails,
             *capture_circles,
         )
 
     def _update(frame: int) -> tuple:
         attacker_marker.set_data([a_traj[frame, 0]], [a_traj[frame, 1]])
+        perceived_attacker_marker.set_data(
+            [perceived_a_traj[frame, 0]], [perceived_a_traj[frame, 1]]
+        )
         defender_markers.set_data(d_traj[frame, :, 0], d_traj[frame, :, 1])
         start = max(0, frame - trail_len)
         attacker_trail.set_data(a_traj[start : frame + 1, 0], a_traj[start : frame + 1, 1])
+        perceived_attacker_trail.set_data(
+            perceived_a_traj[start : frame + 1, 0],
+            perceived_a_traj[start : frame + 1, 1],
+        )
+        perception_error_line.set_data(
+            [a_traj[frame, 0], perceived_a_traj[frame, 0]],
+            [a_traj[frame, 1], perceived_a_traj[frame, 1]],
+        )
         for i, trail in enumerate(defender_trails):
             trail.set_data(
                 d_traj[start : frame + 1, i, 0], d_traj[start : frame + 1, i, 1]
@@ -195,8 +235,11 @@ def save_animation(
             circle.center = (float(d_traj[frame, i, 0]), float(d_traj[frame, i, 1]))
         return (
             attacker_marker,
+            perceived_attacker_marker,
             defender_markers,
             attacker_trail,
+            perceived_attacker_trail,
+            perception_error_line,
             *defender_trails,
             *capture_circles,
         )

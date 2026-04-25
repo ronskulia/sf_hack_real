@@ -78,6 +78,11 @@ class PursuitEvasionEnv:
         Attacker max speed.
     inner_radius, outer_radius : float
         Annulus around the target where defenders spawn.
+    defender_sensor_epsilon : float
+        Per-coordinate attacker-position error visible to defenders. A value of
+        ``0`` means defenders observe the true attacker position; otherwise
+        each env receives a uniform error in ``[-epsilon, epsilon]`` on x/y,
+        clipped back to the unit square.
     shaping : float, optional
         Backward-compatible coefficient applied to both teams when
         ``attacker_shaping`` / ``defender_shaping`` are omitted.
@@ -107,6 +112,7 @@ class PursuitEvasionEnv:
         v_attacker: float = 1.0,
         inner_radius: float = 0.15,
         outer_radius: float = 0.35,
+        defender_sensor_epsilon: float = 0.0,
         shaping: float | None = None,
         attacker_shaping: float | None = None,
         defender_shaping: float | None = None,
@@ -131,6 +137,12 @@ class PursuitEvasionEnv:
         self.v_defender: float = self.sigma * self.v_attacker
         self.inner_radius: float = float(inner_radius)
         self.outer_radius: float = float(outer_radius)
+        self.defender_sensor_epsilon: float = float(defender_sensor_epsilon)
+        if self.defender_sensor_epsilon < 0.0:
+            raise ValueError(
+                "defender_sensor_epsilon must be >= 0, "
+                f"got {self.defender_sensor_epsilon}"
+            )
         base_shaping = 0.01 if shaping is None else float(shaping)
         self.attacker_shaping: float = (
             base_shaping if attacker_shaping is None else float(attacker_shaping)
@@ -155,6 +167,12 @@ class PursuitEvasionEnv:
         self.attacker_vel: np.ndarray = np.zeros((self.B, 2), dtype=np.float32)
         self.defender_pos: np.ndarray = np.zeros((self.B, self.k, 2), dtype=np.float32)
         self.defender_vel: np.ndarray = np.zeros((self.B, self.k, 2), dtype=np.float32)
+        self.defender_perceived_attacker_pos: np.ndarray = np.zeros(
+            (self.B, 2), dtype=np.float32
+        )
+        self.defender_attacker_pos_error: np.ndarray = np.zeros(
+            (self.B, 2), dtype=np.float32
+        )
         self.step_count: np.ndarray = np.zeros(self.B, dtype=np.int32)
         self.done: np.ndarray = np.zeros(self.B, dtype=bool)
         self.outcome: np.ndarray = np.zeros(self.B, dtype=np.int32)
@@ -225,6 +243,42 @@ class PursuitEvasionEnv:
         out[..., 1] = self.target[1] + r * np.sin(angle)
         return out
 
+    def _refresh_defender_perception(self, mask: np.ndarray | None = None) -> None:
+        """Resample defenders' noisy view of the attacker position."""
+        if mask is None:
+            pos = self.attacker_pos
+            if self.defender_sensor_epsilon == 0.0:
+                perceived = pos.copy()
+            else:
+                err = self.rng.uniform(
+                    -self.defender_sensor_epsilon,
+                    self.defender_sensor_epsilon,
+                    size=pos.shape,
+                ).astype(np.float32)
+                perceived = np.clip(pos + err, 0.0, 1.0).astype(np.float32)
+            self.defender_perceived_attacker_pos = perceived
+            self.defender_attacker_pos_error = (
+                self.defender_perceived_attacker_pos - self.attacker_pos
+            ).astype(np.float32)
+            return
+
+        if not mask.any():
+            return
+        pos = self.attacker_pos[mask]
+        if self.defender_sensor_epsilon == 0.0:
+            perceived = pos.copy()
+        else:
+            err = self.rng.uniform(
+                -self.defender_sensor_epsilon,
+                self.defender_sensor_epsilon,
+                size=pos.shape,
+            ).astype(np.float32)
+            perceived = np.clip(pos + err, 0.0, 1.0).astype(np.float32)
+        self.defender_perceived_attacker_pos[mask] = perceived
+        self.defender_attacker_pos_error[mask] = (
+            self.defender_perceived_attacker_pos[mask] - self.attacker_pos[mask]
+        ).astype(np.float32)
+
     # -------------------------------------------------------------------- reset
     def reset(self) -> tuple[np.ndarray, np.ndarray]:
         """Reset every environment in the batch.
@@ -241,6 +295,7 @@ class PursuitEvasionEnv:
         self.step_count.fill(0)
         self.done.fill(False)
         self.outcome.fill(OUTCOME_NONE)
+        self._refresh_defender_perception()
         return self._get_obs()
 
     def reset_idxs(self, mask: np.ndarray) -> None:
@@ -261,6 +316,7 @@ class PursuitEvasionEnv:
         self.step_count[mask] = 0
         self.done[mask] = False
         self.outcome[mask] = OUTCOME_NONE
+        self._refresh_defender_perception(mask)
 
     # ---------------------------------------------------------------- dynamics
     @staticmethod
@@ -421,6 +477,7 @@ class PursuitEvasionEnv:
         self.outcome = np.where(killed, OUTCOME_DEFENDER_CAPTURE, self.outcome)
         self.outcome = np.where(timeout, OUTCOME_DEFENDER_TIMEOUT, self.outcome)
         self.done = self.done | new_done
+        self._refresh_defender_perception(active)
 
         a_obs, d_obs = self._get_obs()
         return StepResult(
@@ -450,7 +507,9 @@ class PursuitEvasionEnv:
 
         own_pos = self.defender_pos  # (B, k, 2)
         own_vel = self.defender_vel  # (B, k, 2)
-        att_pos = np.broadcast_to(self.attacker_pos[:, None, :], (B, k, 2))
+        att_pos = np.broadcast_to(
+            self.defender_perceived_attacker_pos[:, None, :], (B, k, 2)
+        )
         att_vel = np.broadcast_to(self.attacker_vel[:, None, :], (B, k, 2))
 
         if k > 1:
@@ -482,6 +541,7 @@ class PursuitEvasionEnv:
             "target_pos": self.target.tolist(),
             "v_attacker": self.v_attacker,
             "v_defender": self.v_defender,
+            "defender_sensor_epsilon": self.defender_sensor_epsilon,
             "attacker_shaping": self.attacker_shaping,
             "defender_shaping": self.defender_shaping,
             "danger_radius": self.danger_radius,

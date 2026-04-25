@@ -138,7 +138,7 @@ class HeuristicDefender:
         -------
         np.ndarray of shape ``(B, k, 2)``.
         """
-        attacker_pos = env.attacker_pos  # (B, 2)
+        attacker_pos = env.defender_perceived_attacker_pos  # (B, 2)
         attacker_vel = env.attacker_vel  # (B, 2)
         defender_pos = env.defender_pos  # (B, k, 2)
         B, k = env.B, env.k
@@ -247,7 +247,7 @@ class HeuristicDefenderTeam:
     def act(self, env: PursuitEvasionEnv) -> np.ndarray:
         """Return defender velocities (B, k, 2)."""
         B, k = env.B, env.k
-        attacker_pos = env.attacker_pos
+        attacker_pos = env.defender_perceived_attacker_pos
         attacker_vel = env.attacker_vel
         defender_pos = env.defender_pos
 
@@ -502,11 +502,15 @@ class CentralizedDefenderNet(nn.Module):
 
     @staticmethod
     def build_obs(env: PursuitEvasionEnv) -> np.ndarray:
-        """Build the centralized observation tensor of shape ``(B, 4 + 4k)``."""
+        """Build the centralized defender observation of shape ``(B, 4 + 4k)``.
+
+        The attacker position component is the defender team's noisy perceived
+        position, not the true environment state.
+        """
         B, k = env.B, env.k
         return np.concatenate(
             [
-                env.attacker_pos,
+                env.defender_perceived_attacker_pos,
                 env.attacker_vel,
                 env.defender_pos.reshape(B, 2 * k),
                 env.defender_vel.reshape(B, 2 * k),

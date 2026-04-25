@@ -13,3 +13,4 @@ pursuit_evasion/outputs/checkpoints/**
 pursuit_evasion/outputs/run.log
 pursuit_evasion/outputs_smoke/
 pursuit_evasion/outputs_central/
+pursuit_evasion/outputs_uncertainty_smoke/
