@@ -181,6 +181,63 @@ def _episode_tracker_step(
         tracker["len"][idx] = 0
 
 
+def _should_save_progress_animation(it: int, n_iters: int, every: int) -> bool:
+    """Return True when a preview animation should be rendered."""
+    if every <= 0 or n_iters <= 0:
+        return False
+    iter_num = it + 1
+    return iter_num == 1 or iter_num == n_iters or iter_num % every == 0
+
+
+def _single_env_like(
+    env: PursuitEvasionEnv,
+    *,
+    seed: int,
+    max_steps: int | None = None,
+) -> PursuitEvasionEnv:
+    """Create a deterministic one-episode env with the same physical settings."""
+    return PursuitEvasionEnv(
+        batch_size=1,
+        k=env.k,
+        sigma=env.sigma,
+        p=env.p,
+        dt=env.dt,
+        max_steps=env.max_steps if max_steps is None else min(env.max_steps, max_steps),
+        capture_radius=env.capture_radius,
+        target_radius=env.target_radius,
+        target_pos=tuple(float(x) for x in env.target),
+        v_attacker=env.v_attacker,
+        inner_radius=env.inner_radius,
+        outer_radius=env.outer_radius,
+        shaping=env.shaping,
+        seed=seed,
+    )
+
+
+def _save_progress_animation(
+    *,
+    env: PursuitEvasionEnv,
+    attacker_policy: _ActsOnEnv,
+    defender_policy: _ActsOnEnv,
+    out_dir: Path,
+    phase: str,
+    it: int,
+    seed: int,
+    max_steps: int | None,
+) -> Path:
+    """Render a single deterministic training-preview episode."""
+    from .animate import run_episode, save_animation
+
+    iter_num = it + 1
+    anim_env = _single_env_like(env, seed=seed, max_steps=max_steps)
+    history = run_episode(anim_env, attacker_policy, defender_policy)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / (
+        f"{phase}_k{env.k}_sigma{env.sigma}_p{env.p}_it{iter_num:04d}.mp4"
+    )
+    return save_animation(history, anim_env.metadata(), out_path)
+
+
 # ============================================================================
 # Attacker training (k-agnostic from the policy POV: 1 agent per env)
 # ============================================================================
@@ -198,6 +255,10 @@ def train_attacker(
     log_every: int = 10,
     log_fn=print,
     snapshot_iters: list[int] | None = None,
+    animation_dir: Path | str | None = None,
+    animation_every: int = 0,
+    animation_max_steps: int | None = None,
+    animation_seed: int = 0,
 ) -> dict:
     """PPO-train the attacker network against a fixed defender opponent.
 
@@ -213,6 +274,8 @@ def train_attacker(
     device : optional, defaults to CPU.
     log_every : int, optional
         Emit one progress line every ``log_every`` PPO iterations.
+    animation_dir : optional
+        If set, save deterministic preview MP4s during training.
 
     Returns
     -------
@@ -331,6 +394,22 @@ def train_attacker(
         if it in snapshot_set:
             snapshots.append({k: v.detach().cpu().clone() for k, v in net.state_dict().items()})
             log_fn(f"  [att it={it:3d}] snapshot saved (#{len(snapshots)})")
+        if animation_dir is not None and _should_save_progress_animation(
+            it, n_iters, animation_every
+        ):
+            out_anim = _save_progress_animation(
+                env=env,
+                attacker_policy=NeuralAttacker(
+                    net, env.v_attacker, deterministic=True
+                ),
+                defender_policy=defender_policy,
+                out_dir=Path(animation_dir),
+                phase="phase_A_attacker",
+                it=it,
+                seed=animation_seed + it,
+                max_steps=animation_max_steps,
+            )
+            log_fn(f"  [att it={it:3d}] preview anim → {out_anim}")
     return {"metrics": metrics, "snapshots": snapshots}
 
 
@@ -743,6 +822,11 @@ def train_defender_centralized(
     log_every: int = 10,
     log_fn=print,
     population: PopulationAttacker | None = None,
+    animation_dir: Path | str | None = None,
+    animation_every: int = 0,
+    animation_max_steps: int | None = None,
+    animation_seed: int = 0,
+    animation_attacker_policy: _ActsOnEnv | None = None,
 ) -> dict:
     """PPO-train the centralized defender (one brain, k×2-D action) against
     a fixed attacker policy.
@@ -867,6 +951,22 @@ def train_defender_centralized(
                 f"att_succ={m['attacker_succ']:.3f} d_succ={m['defender_succ']:.3f} "
                 f"pl={pl:+.4f} vl={vl:.4f} H={ent:+.3f} fps={m['fps']:.0f}"
             )
+        if animation_dir is not None and _should_save_progress_animation(
+            it, n_iters, animation_every
+        ):
+            out_anim = _save_progress_animation(
+                env=env,
+                attacker_policy=animation_attacker_policy or attacker_policy,
+                defender_policy=CentralizedDefender(
+                    net, env.v_defender, deterministic=True
+                ),
+                out_dir=Path(animation_dir),
+                phase="phase_B_cdef",
+                it=it,
+                seed=animation_seed + it,
+                max_steps=animation_max_steps,
+            )
+            log_fn(f"  [cdef it={it:3d}] preview anim → {out_anim}")
     return {"metrics": metrics}
 
 
@@ -895,6 +995,9 @@ def sequential_train(
     save_dir: Path | str | None = None,
     log_every: int = 10,
     log_fn=print,
+    partial_animation_dir: Path | str | None = None,
+    partial_animation_every: int = 0,
+    partial_animation_max_steps: int | None = None,
 ) -> dict:
     """Two-phase training with population-based opponent during phase B.
 
@@ -910,6 +1013,8 @@ def sequential_train(
     single attacker.
 
     ``log_every`` controls how often each PPO phase emits progress lines.
+    If ``partial_animation_dir`` and ``partial_animation_every`` are set,
+    deterministic preview MP4s are rendered during both phases.
 
     Returns ``{attacker_net, central_defender_net, metrics, env_meta}``.
     """
@@ -923,6 +1028,13 @@ def sequential_train(
         f"att_arch={attacker_hidden}x{attacker_n_layers} "
         f"cdef_arch={central_hidden}x{central_n_layers}  B={n_envs} ==="
     )
+    if partial_animation_dir is not None and partial_animation_every > 0:
+        log_fn(
+            "preview animations: "
+            f"every {partial_animation_every} iters, "
+            f"max_steps={partial_animation_max_steps or 'env'}, "
+            f"dir={partial_animation_dir}"
+        )
 
     # ---- Phase A: attacker vs heuristic defender ----
     log_fn("[phase A] attacker (bigger MLP) vs heuristic defender")
@@ -950,6 +1062,10 @@ def sequential_train(
         log_every=log_every,
         log_fn=log_fn,
         snapshot_iters=snap_iters,
+        animation_dir=partial_animation_dir,
+        animation_every=partial_animation_every,
+        animation_max_steps=partial_animation_max_steps,
+        animation_seed=seed + 100_000,
     )
     snapshots = a_log["snapshots"]
     log_fn(f"[phase A] saved {len(snapshots)} attacker snapshots at iters {snap_iters}")
@@ -993,6 +1109,7 @@ def sequential_train(
         )
     population = PopulationAttacker(pop_policies, env_b.B, rng_seed=seed + 2)
     log_fn(f"[phase B] population size = {len(pop_policies)}")
+    preview_attacker_policy = pop_policies[-2] if snapshots else pop_policies[0]
 
     # Pass a sentinel attacker_policy too (unused when population is set)
     cd_log = train_defender_centralized(
@@ -1004,6 +1121,11 @@ def sequential_train(
         log_every=log_every,
         log_fn=log_fn,
         population=population,
+        animation_dir=partial_animation_dir,
+        animation_every=partial_animation_every,
+        animation_max_steps=partial_animation_max_steps,
+        animation_seed=seed + 200_000,
+        animation_attacker_policy=preview_attacker_policy,
     )
 
     if save_dir is not None:
@@ -1033,6 +1155,8 @@ def sequential_train(
         "snapshot_fractions": list(snapshot_fractions),
         "snapshot_iters": snap_iters,
         "snapshot_count": len(snapshots),
+        "partial_animation_every": partial_animation_every,
+        "partial_animation_max_steps": partial_animation_max_steps,
         "phases": [
             {
                 "name": "phase_A_attacker_warmup",

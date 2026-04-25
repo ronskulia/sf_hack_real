@@ -56,6 +56,13 @@ def _normalize_training_config(training: dict) -> dict:
             training.get("n_alternations", 1)
         )
     training["log_every"] = int(training.get("log_every", 10))
+    training["partial_animation_every"] = int(
+        training.get("partial_animation_every", 0)
+    )
+    max_steps = training.get("partial_animation_max_steps")
+    training["partial_animation_max_steps"] = (
+        None if max_steps in (None, 0) else int(max_steps)
+    )
     return training
 
 
@@ -144,6 +151,16 @@ def _cell(args: tuple) -> dict:
         save_dir=cell_dir,
         log_every=training.get("log_every", 10),
         log_fn=log,
+        partial_animation_dir=(
+            Path(out_root)
+            / "animations"
+            / "partials"
+            / f"k{k}_sigma{sigma}_p{p}"
+        )
+        if training.get("partial_animation_every", 0) > 0
+        else None,
+        partial_animation_every=training.get("partial_animation_every", 0),
+        partial_animation_max_steps=training.get("partial_animation_max_steps"),
     )
     train_elapsed = time.perf_counter() - t0
     log(f"train_elapsed={train_elapsed:.1f}s")
