@@ -66,6 +66,21 @@ def _normalize_training_config(training: dict) -> dict:
     return training
 
 
+def _create_unique_run_dir(parent: Path) -> Path:
+    """Create and return a timestamped child directory under ``parent``."""
+    parent.mkdir(parents=True, exist_ok=True)
+    stem = time.strftime("%Y%m%d_%H%M%S")
+    for i in range(1000):
+        suffix = f"_{i:03d}" if i else ""
+        candidate = parent / f"{stem}_{os.getpid()}{suffix}"
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"could not create unique run directory under {parent}")
+
+
 class _CellProgressLogger:
     """Write per-cell progress to train.log and stream it to stdout immediately."""
 
@@ -87,7 +102,19 @@ class _CellProgressLogger:
 
 def _cell(args: tuple) -> dict:
     """Train one (k, σ, p) cell with sequential_train, then evaluate."""
-    cell_id, k, sigma, p, training, env_kwargs, n_eval, n_anim, seed, out_root = args
+    (
+        cell_id,
+        k,
+        sigma,
+        p,
+        training,
+        env_kwargs,
+        n_eval,
+        n_anim,
+        seed,
+        out_root,
+        final_sanity_dir,
+    ) = args
 
     threads = int(os.environ.get("WORKER_THREADS", "1"))
     os.environ.setdefault("OMP_NUM_THREADS", str(threads))
@@ -216,7 +243,7 @@ def _cell(args: tuple) -> dict:
     log(f"eval_heuristic_att_vs_cdef={eval_vs_heur_att}")
 
     # Final deterministic sanity animations with the fully trained pair.
-    anim_dir = Path(out_root) / "animations" / "final_sanity"
+    anim_dir = Path(final_sanity_dir)
     anim_dir.mkdir(parents=True, exist_ok=True)
     outcome_names = {
         1: "attacker_win",
@@ -247,7 +274,7 @@ def _cell(args: tuple) -> dict:
         save_animation(h, env_anim.metadata(), out_anim)
         log(
             "saved final sanity anim -> "
-            f"{out_anim.name} ({h['steps']} steps, outcome={h['outcome']})"
+            f"{out_anim} ({h['steps']} steps, outcome={h['outcome']})"
         )
 
     progress.close()
@@ -274,6 +301,7 @@ def _cell(args: tuple) -> dict:
         "schedule": res.get("schedule"),
         "phase_summaries": phase_summaries,
         "metrics_path": str(metrics_path),
+        "final_sanity_dir": str(anim_dir),
     }
 
     return {
@@ -376,11 +404,30 @@ def main() -> None:
         if args.final_animations is not None
         else int(config["evaluation"]["n_animations"])
     )
+    final_sanity_dir = (
+        _create_unique_run_dir(out_root / "animations" / "final_sanity")
+        if n_anim > 0
+        else out_root / "animations" / "final_sanity"
+    )
+    if n_anim > 0:
+        logger.info(f"final sanity animations → {final_sanity_dir}")
 
     os.environ["WORKER_THREADS"] = str(args.threads_per_worker)
 
     cell_args = [
-        (i, k, sigma, p, config["training"], env_kwargs, n_eval, n_anim, seed, str(out_root))
+        (
+            i,
+            k,
+            sigma,
+            p,
+            config["training"],
+            env_kwargs,
+            n_eval,
+            n_anim,
+            seed,
+            str(out_root),
+            str(final_sanity_dir),
+        )
         for i, (k, _, _) in enumerate(cells)
     ]
     n_workers = args.workers if args.workers > 0 else min(len(cell_args), os.cpu_count() or 1)
@@ -415,6 +462,7 @@ def main() -> None:
     out_json.write_text(json.dumps({
         "config": config,
         "git": _git_info(_REPO_ROOT),
+        "final_sanity_dir": str(final_sanity_dir),
         "cells": [_jsonable(r) for r in results],
     }, indent=2))
     logger.info(f"results → {out_json}")
