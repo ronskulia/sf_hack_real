@@ -210,6 +210,8 @@ def _single_env_like(
         inner_radius=env.inner_radius,
         outer_radius=env.outer_radius,
         defender_sensor_epsilon=env.defender_sensor_epsilon,
+        defender_sensor_distance_scale=env.defender_sensor_distance_scale,
+        defender_sensor_smooth_time=env.defender_sensor_smooth_time,
         attacker_shaping=env.attacker_shaping,
         defender_shaping=env.defender_shaping,
         danger_radius=env.danger_radius,

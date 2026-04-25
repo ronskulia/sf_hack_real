@@ -79,10 +79,17 @@ class PursuitEvasionEnv:
     inner_radius, outer_radius : float
         Annulus around the target where defenders spawn.
     defender_sensor_epsilon : float
-        Per-coordinate attacker-position error visible to defenders. A value of
-        ``0`` means defenders observe the true attacker position; otherwise
-        each env receives a uniform error in ``[-epsilon, epsilon]`` on x/y,
-        clipped back to the unit square.
+        Maximum per-coordinate attacker-position error visible to defenders.
+        A value of ``0`` means defenders observe the true attacker position.
+        Otherwise, defenders receive a smooth value-noise offset whose amplitude
+        increases with the distance from the attacker to the closest defender.
+    defender_sensor_distance_scale : float
+        Closest-defender distance at which defender perception reaches the full
+        ``defender_sensor_epsilon``. The error ramps down to zero at the capture
+        radius.
+    defender_sensor_smooth_time : float
+        Approximate seconds between new smooth-noise targets for defender
+        perception. Larger values make uncertainty drift more slowly.
     shaping : float, optional
         Backward-compatible coefficient applied to both teams when
         ``attacker_shaping`` / ``defender_shaping`` are omitted.
@@ -113,6 +120,8 @@ class PursuitEvasionEnv:
         inner_radius: float = 0.15,
         outer_radius: float = 0.35,
         defender_sensor_epsilon: float = 0.0,
+        defender_sensor_distance_scale: float = 0.5,
+        defender_sensor_smooth_time: float = 0.5,
         shaping: float | None = None,
         attacker_shaping: float | None = None,
         defender_shaping: float | None = None,
@@ -143,6 +152,24 @@ class PursuitEvasionEnv:
                 "defender_sensor_epsilon must be >= 0, "
                 f"got {self.defender_sensor_epsilon}"
             )
+        self.defender_sensor_distance_scale: float = float(
+            defender_sensor_distance_scale
+        )
+        if self.defender_sensor_distance_scale <= 0.0:
+            raise ValueError(
+                "defender_sensor_distance_scale must be > 0, "
+                f"got {self.defender_sensor_distance_scale}"
+            )
+        self.defender_sensor_distance_scale = max(
+            self.defender_sensor_distance_scale,
+            self.capture_radius + 1e-6,
+        )
+        self.defender_sensor_smooth_time: float = float(defender_sensor_smooth_time)
+        if self.defender_sensor_smooth_time <= 0.0:
+            raise ValueError(
+                "defender_sensor_smooth_time must be > 0, "
+                f"got {self.defender_sensor_smooth_time}"
+            )
         base_shaping = 0.01 if shaping is None else float(shaping)
         self.attacker_shaping: float = (
             base_shaping if attacker_shaping is None else float(attacker_shaping)
@@ -171,6 +198,18 @@ class PursuitEvasionEnv:
             (self.B, 2), dtype=np.float32
         )
         self.defender_attacker_pos_error: np.ndarray = np.zeros(
+            (self.B, 2), dtype=np.float32
+        )
+        self._defender_sensor_noise_start: np.ndarray = np.zeros(
+            (self.B, 2), dtype=np.float32
+        )
+        self._defender_sensor_noise_target: np.ndarray = np.zeros(
+            (self.B, 2), dtype=np.float32
+        )
+        self._defender_sensor_noise_phase: np.ndarray = np.zeros(
+            self.B, dtype=np.float32
+        )
+        self._defender_sensor_noise_value: np.ndarray = np.zeros(
             (self.B, 2), dtype=np.float32
         )
         self.step_count: np.ndarray = np.zeros(self.B, dtype=np.int32)
@@ -243,18 +282,138 @@ class PursuitEvasionEnv:
         out[..., 1] = self.target[1] + r * np.sin(angle)
         return out
 
-    def _refresh_defender_perception(self, mask: np.ndarray | None = None) -> None:
-        """Resample defenders' noisy view of the attacker position."""
+    def _sample_defender_sensor_noise(self, n: int) -> np.ndarray:
+        """Sample bounded knots for the defenders' smooth perception noise."""
+        return self.rng.uniform(-1.0, 1.0, size=(n, 2)).astype(np.float32)
+
+    def _update_defender_sensor_noise_value(
+        self, idx: np.ndarray | None = None
+    ) -> None:
+        """Evaluate smooth value noise at the current per-env phase."""
+        if idx is None:
+            phase = self._defender_sensor_noise_phase
+            start = self._defender_sensor_noise_start
+            target = self._defender_sensor_noise_target
+            smooth = phase * phase * (3.0 - 2.0 * phase)
+            self._defender_sensor_noise_value = (
+                start + (target - start) * smooth[:, None]
+            ).astype(np.float32)
+            return
+
+        phase = self._defender_sensor_noise_phase[idx]
+        start = self._defender_sensor_noise_start[idx]
+        target = self._defender_sensor_noise_target[idx]
+        smooth = phase * phase * (3.0 - 2.0 * phase)
+        self._defender_sensor_noise_value[idx] = (
+            start + (target - start) * smooth[:, None]
+        ).astype(np.float32)
+
+    def _reset_defender_sensor_noise(self, mask: np.ndarray | None = None) -> None:
+        """Initialize smooth perception-noise state for new episodes."""
+        if self.defender_sensor_epsilon == 0.0:
+            if mask is None:
+                self._defender_sensor_noise_start.fill(0.0)
+                self._defender_sensor_noise_target.fill(0.0)
+                self._defender_sensor_noise_phase.fill(0.0)
+                self._defender_sensor_noise_value.fill(0.0)
+            elif mask.any():
+                self._defender_sensor_noise_start[mask] = 0.0
+                self._defender_sensor_noise_target[mask] = 0.0
+                self._defender_sensor_noise_phase[mask] = 0.0
+                self._defender_sensor_noise_value[mask] = 0.0
+            return
+
         if mask is None:
+            self._defender_sensor_noise_start = self._sample_defender_sensor_noise(
+                self.B
+            )
+            self._defender_sensor_noise_target = self._sample_defender_sensor_noise(
+                self.B
+            )
+            self._defender_sensor_noise_phase = self.rng.uniform(
+                0.0, 1.0, size=self.B
+            ).astype(np.float32)
+            self._update_defender_sensor_noise_value()
+            return
+
+        if not mask.any():
+            return
+        idx = np.where(mask)[0]
+        n = len(idx)
+        self._defender_sensor_noise_start[idx] = self._sample_defender_sensor_noise(n)
+        self._defender_sensor_noise_target[idx] = self._sample_defender_sensor_noise(n)
+        self._defender_sensor_noise_phase[idx] = self.rng.uniform(
+            0.0, 1.0, size=n
+        ).astype(np.float32)
+        self._update_defender_sensor_noise_value(idx)
+
+    def _advance_defender_sensor_noise(self, mask: np.ndarray | None = None) -> None:
+        """Advance the defenders' smooth perception-noise state."""
+        if self.defender_sensor_epsilon == 0.0:
+            return
+
+        if mask is None:
+            idx = np.arange(self.B)
+        else:
+            if not mask.any():
+                return
+            idx = np.where(mask)[0]
+
+        phase = (
+            self._defender_sensor_noise_phase[idx]
+            + self.dt / self.defender_sensor_smooth_time
+        )
+        rollover = phase >= 1.0
+        if rollover.any():
+            roll_idx = idx[rollover]
+            self._defender_sensor_noise_start[roll_idx] = (
+                self._defender_sensor_noise_target[roll_idx]
+            )
+            self._defender_sensor_noise_target[roll_idx] = (
+                self._sample_defender_sensor_noise(len(roll_idx))
+            )
+            phase[rollover] = np.mod(phase[rollover], 1.0)
+
+        self._defender_sensor_noise_phase[idx] = phase.astype(np.float32)
+        self._update_defender_sensor_noise_value(idx)
+
+    def _defender_sensor_amplitude(self, idx: np.ndarray | None = None) -> np.ndarray:
+        """Return per-env perception error amplitude from closest-defender range."""
+        if idx is None:
+            attacker_pos = self.attacker_pos
+            defender_pos = self.defender_pos
+        else:
+            attacker_pos = self.attacker_pos[idx]
+            defender_pos = self.defender_pos[idx]
+
+        rel = defender_pos - attacker_pos[:, None, :]
+        closest_dist = np.linalg.norm(rel, axis=-1).min(axis=-1)
+        denom = max(self.defender_sensor_distance_scale - self.capture_radius, 1e-6)
+        distance_gain = np.clip(
+            (closest_dist - self.capture_radius) / denom,
+            0.0,
+            1.0,
+        )
+        return (self.defender_sensor_epsilon * distance_gain).astype(np.float32)
+
+    def _refresh_defender_perception(
+        self,
+        mask: np.ndarray | None = None,
+        *,
+        advance_noise: bool = False,
+    ) -> None:
+        """Update defenders' smooth noisy view of the attacker position."""
+        if mask is None:
+            if advance_noise:
+                self._advance_defender_sensor_noise()
             pos = self.attacker_pos
             if self.defender_sensor_epsilon == 0.0:
                 perceived = pos.copy()
             else:
-                err = self.rng.uniform(
-                    -self.defender_sensor_epsilon,
-                    self.defender_sensor_epsilon,
-                    size=pos.shape,
-                ).astype(np.float32)
+                err = (
+                    self._defender_sensor_noise_value
+                    * self._defender_sensor_amplitude()[:, None]
+                )
                 perceived = np.clip(pos + err, 0.0, 1.0).astype(np.float32)
             self.defender_perceived_attacker_pos = perceived
             self.defender_attacker_pos_error = (
@@ -264,19 +423,21 @@ class PursuitEvasionEnv:
 
         if not mask.any():
             return
-        pos = self.attacker_pos[mask]
+        if advance_noise:
+            self._advance_defender_sensor_noise(mask)
+        idx = np.where(mask)[0]
+        pos = self.attacker_pos[idx]
         if self.defender_sensor_epsilon == 0.0:
             perceived = pos.copy()
         else:
-            err = self.rng.uniform(
-                -self.defender_sensor_epsilon,
-                self.defender_sensor_epsilon,
-                size=pos.shape,
-            ).astype(np.float32)
+            err = (
+                self._defender_sensor_noise_value[idx]
+                * self._defender_sensor_amplitude(idx)[:, None]
+            )
             perceived = np.clip(pos + err, 0.0, 1.0).astype(np.float32)
-        self.defender_perceived_attacker_pos[mask] = perceived
-        self.defender_attacker_pos_error[mask] = (
-            self.defender_perceived_attacker_pos[mask] - self.attacker_pos[mask]
+        self.defender_perceived_attacker_pos[idx] = perceived
+        self.defender_attacker_pos_error[idx] = (
+            self.defender_perceived_attacker_pos[idx] - self.attacker_pos[idx]
         ).astype(np.float32)
 
     # -------------------------------------------------------------------- reset
@@ -295,6 +456,7 @@ class PursuitEvasionEnv:
         self.step_count.fill(0)
         self.done.fill(False)
         self.outcome.fill(OUTCOME_NONE)
+        self._reset_defender_sensor_noise()
         self._refresh_defender_perception()
         return self._get_obs()
 
@@ -316,6 +478,7 @@ class PursuitEvasionEnv:
         self.step_count[mask] = 0
         self.done[mask] = False
         self.outcome[mask] = OUTCOME_NONE
+        self._reset_defender_sensor_noise(mask)
         self._refresh_defender_perception(mask)
 
     # ---------------------------------------------------------------- dynamics
@@ -477,7 +640,7 @@ class PursuitEvasionEnv:
         self.outcome = np.where(killed, OUTCOME_DEFENDER_CAPTURE, self.outcome)
         self.outcome = np.where(timeout, OUTCOME_DEFENDER_TIMEOUT, self.outcome)
         self.done = self.done | new_done
-        self._refresh_defender_perception(active)
+        self._refresh_defender_perception(active, advance_noise=True)
 
         a_obs, d_obs = self._get_obs()
         return StepResult(
@@ -495,6 +658,8 @@ class PursuitEvasionEnv:
         B, k = self.B, self.k
         target_b = np.broadcast_to(self.target[None, :], (B, 2))
 
+        # Attacker observations stay noise-free; only defenders receive the
+        # perceived attacker position below.
         attacker_obs = np.concatenate(
             [
                 self.attacker_pos,
@@ -542,6 +707,8 @@ class PursuitEvasionEnv:
             "v_attacker": self.v_attacker,
             "v_defender": self.v_defender,
             "defender_sensor_epsilon": self.defender_sensor_epsilon,
+            "defender_sensor_distance_scale": self.defender_sensor_distance_scale,
+            "defender_sensor_smooth_time": self.defender_sensor_smooth_time,
             "attacker_shaping": self.attacker_shaping,
             "defender_shaping": self.defender_shaping,
             "danger_radius": self.danger_radius,

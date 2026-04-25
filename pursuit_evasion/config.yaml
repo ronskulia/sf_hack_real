@@ -13,6 +13,8 @@ env:
   defender_inner_radius: 0.15
   defender_outer_radius: 0.35
   defender_sensor_epsilon: 0.05
+  defender_sensor_distance_scale: 0.5
+  defender_sensor_smooth_time: 0.5
   attacker_danger_radius: 0.15
   attacker_shaping: 0.01
   defender_shaping: 0.01

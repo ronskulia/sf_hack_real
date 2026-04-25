@@ -302,6 +302,12 @@ def main() -> None:
         "inner_radius": config["env"]["defender_inner_radius"],
         "outer_radius": config["env"]["defender_outer_radius"],
         "defender_sensor_epsilon": config["env"].get("defender_sensor_epsilon", 0.0),
+        "defender_sensor_distance_scale": config["env"].get(
+            "defender_sensor_distance_scale", 0.5
+        ),
+        "defender_sensor_smooth_time": config["env"].get(
+            "defender_sensor_smooth_time", 0.5
+        ),
         "attacker_shaping": config["env"].get("attacker_shaping", 0.01),
         "defender_shaping": config["env"].get(
             "defender_shaping", config["env"].get("attacker_shaping", 0.01)
