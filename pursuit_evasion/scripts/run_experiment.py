@@ -21,6 +21,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import queue
 import subprocess
 import sys
 import time
@@ -56,6 +57,27 @@ def _as_list(x) -> list:
     return [x]
 
 
+class _LocalLogSink:
+    """Small queue-like adapter used when training runs in the main process."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self.logger = logger
+
+    def put(self, msg: str) -> None:
+        """Log a worker message immediately."""
+        self.logger.info(msg)
+
+
+def _drain_log_queue(log_queue, logger: logging.Logger) -> None:
+    """Move all currently available worker log lines into the main logger."""
+    while True:
+        try:
+            msg = log_queue.get_nowait()
+        except queue.Empty:
+            break
+        logger.info(msg)
+
+
 # ----------------------------------------------------------- worker functions
 
 
@@ -84,7 +106,23 @@ def _heuristic_cell(args: tuple) -> dict:
 
 def _rl_cell(args: tuple) -> dict:
     """Train one (k, σ, p) cell and evaluate the resulting policies."""
-    cell_id, k, sigma, p, training_cfg, env_kwargs, n_eval, n_anim, seed, out_root = args
+    if len(args) == 10:
+        cell_id, k, sigma, p, training_cfg, env_kwargs, n_eval, n_anim, seed, out_root = args
+        log_queue = None
+    else:
+        (
+            cell_id,
+            k,
+            sigma,
+            p,
+            training_cfg,
+            env_kwargs,
+            n_eval,
+            n_anim,
+            seed,
+            out_root,
+            log_queue,
+        ) = args
     # Limit thread count so parallel cells don't fight over BLAS threads.
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -107,9 +145,15 @@ def _rl_cell(args: tuple) -> dict:
     cell_dir = Path(out_root) / "checkpoints" / f"k{k}_sigma{sigma}_p{p}"
     cell_dir.mkdir(parents=True, exist_ok=True)
     log_lines: list[str] = []
+    log_prefix = f"[cell {cell_id + 1} k={k} σ={sigma:.2f} p={p:.2f}] "
 
     def log(msg: str) -> None:
         log_lines.append(msg)
+        prefixed = f"{log_prefix}{msg}"
+        if log_queue is not None:
+            log_queue.put(prefixed)
+        else:
+            print(prefixed, flush=True)
 
     cfg = PPOConfig(
         n_steps=training_cfg["n_steps"],
@@ -137,6 +181,7 @@ def _rl_cell(args: tuple) -> dict:
         seed=seed,
         env_kwargs=env_kwargs,
         save_dir=cell_dir,
+        log_every=int(training_cfg.get("log_every", 10)),
         log_fn=log,
     )
     train_elapsed = time.perf_counter() - t0
@@ -305,19 +350,34 @@ def main() -> None:
 
     t0 = time.perf_counter()
     if n_workers == 1:
-        rl_results = [_rl_cell(a) for a in rl_args]
+        log_sink = _LocalLogSink(logger)
+        rl_results = [_rl_cell((*a, log_sink)) for a in rl_args]
     else:
-        with mp.Pool(n_workers) as pool:
-            rl_results = []
-            for r in pool.imap_unordered(_rl_cell, rl_args):
-                rl_results.append(r)
-                ci = r["eval"]["ci_95"]
-                logger.info(
-                    f"  [rl  ] k={r['k']:2d} σ={r['sigma']:.2f} p={r['p']:.2f}  "
-                    f"succ={r['eval']['attacker_success_rate']:.3f} "
-                    f"CI=[{ci[0]:.3f},{ci[1]:.3f}]  "
-                    f"train={r['train_seconds']:.0f}s"
-                )
+        with mp.Manager() as manager:
+            log_queue = manager.Queue()
+            with mp.Pool(n_workers) as pool:
+                async_results = [
+                    pool.apply_async(_rl_cell, ((*a, log_queue),)) for a in rl_args
+                ]
+                pending = set(range(len(async_results)))
+                rl_results = []
+                while pending:
+                    _drain_log_queue(log_queue, logger)
+                    finished = [i for i in list(pending) if async_results[i].ready()]
+                    for i in finished:
+                        pending.remove(i)
+                        r = async_results[i].get()
+                        rl_results.append(r)
+                        ci = r["eval"]["ci_95"]
+                        logger.info(
+                            f"  [rl  ] k={r['k']:2d} σ={r['sigma']:.2f} p={r['p']:.2f}  "
+                            f"succ={r['eval']['attacker_success_rate']:.3f} "
+                            f"CI=[{ci[0]:.3f},{ci[1]:.3f}]  "
+                            f"train={r['train_seconds']:.0f}s"
+                        )
+                    if pending:
+                        time.sleep(0.2)
+                _drain_log_queue(log_queue, logger)
     elapsed = time.perf_counter() - t0
     logger.info(f"RL sweep total wall: {elapsed:.0f}s")
 

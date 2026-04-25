@@ -211,6 +211,8 @@ def train_attacker(
     cfg : PPOConfig
     optimizer : optional, defaults to Adam(lr=cfg.lr).
     device : optional, defaults to CPU.
+    log_every : int, optional
+        Emit one progress line every ``log_every`` PPO iterations.
 
     Returns
     -------
@@ -323,7 +325,7 @@ def train_attacker(
             log_fn(
                 f"  [att it={it:3d} step={total_steps:>7d}] "
                 f"ret={m['ep_return']:+.3f} len={m['ep_length']:5.1f} "
-                f"succ={m['attacker_succ']:.3f} "
+                f"att_succ={m['attacker_succ']:.3f} "
                 f"pl={pl:+.4f} vl={vl:.4f} H={ent:+.3f} fps={m['fps']:.0f}"
             )
         if it in snapshot_set:
@@ -445,16 +447,20 @@ def train_defender(
 
         total_steps += T * B
         elapsed = time.perf_counter() - t_start
-        # defender 'success' = attacker did NOT win
-        not_att = float(
-            np.mean([o != 1 for o in tracker["ep_outcomes"]])
-        ) if tracker["ep_outcomes"] else float("nan")
+        if tracker["ep_outcomes"]:
+            attacker_succ = float(np.mean([o == 1 for o in tracker["ep_outcomes"]]))
+            # defender 'success' = attacker did NOT win
+            defender_succ = float(np.mean([o != 1 for o in tracker["ep_outcomes"]]))
+        else:
+            attacker_succ = float("nan")
+            defender_succ = float("nan")
         m = {
             "iter": it,
             "step": total_steps,
             "ep_return": float(np.mean(tracker["ep_rets"])) if tracker["ep_rets"] else float("nan"),
             "ep_length": float(np.mean(tracker["ep_lens"])) if tracker["ep_lens"] else float("nan"),
-            "defender_succ": not_att,
+            "attacker_succ": attacker_succ,
+            "defender_succ": defender_succ,
             "policy_loss": pl,
             "value_loss": vl,
             "entropy": ent,
@@ -466,7 +472,7 @@ def train_defender(
             log_fn(
                 f"  [def it={it:3d} step={total_steps:>7d}] "
                 f"ret={m['ep_return']:+.3f} len={m['ep_length']:5.1f} "
-                f"d_succ={m['defender_succ']:.3f} "
+                f"att_succ={m['attacker_succ']:.3f} d_succ={m['defender_succ']:.3f} "
                 f"pl={pl:+.4f} vl={vl:.4f} H={ent:+.3f} fps={m['fps']:.0f}"
             )
     return {"metrics": metrics}
@@ -491,6 +497,7 @@ def alternating_train(
     seed: int = 0,
     env_kwargs: dict | None = None,
     save_dir: Path | str | None = None,
+    log_every: int = 10,
     log_fn=print,
 ) -> dict:
     """Run the full alternating self-play schedule for one (k, σ, p) cell.
@@ -501,6 +508,8 @@ def alternating_train(
       Then ``n_alternations`` rounds of:
         Phase A: freeze attacker, train neural defender for ``defender_iters``
         Phase B: freeze defender, train neural attacker for ``attacker_iters``
+
+    ``log_every`` controls how often each inner PPO phase emits progress lines.
 
     Returns
     -------
@@ -535,7 +544,7 @@ def alternating_train(
     log_fn("[phase 0] attacker warmup vs heuristic defender")
     res = train_attacker(
         env, attacker_net, heuristic_defender,
-        n_iters=attacker_warmup_iters, cfg=cfg, log_fn=log_fn,
+        n_iters=attacker_warmup_iters, cfg=cfg, log_every=log_every, log_fn=log_fn,
     )
     all_metrics["warmup"] = res["metrics"]
 
@@ -548,7 +557,7 @@ def alternating_train(
         env.reset()
         res_d = train_defender(
             env, defender_net, attacker_frozen,
-            n_iters=defender_iters, cfg=cfg, log_fn=log_fn,
+            n_iters=defender_iters, cfg=cfg, log_every=log_every, log_fn=log_fn,
         )
         round_log["defender"] = res_d["metrics"]
 
@@ -558,7 +567,7 @@ def alternating_train(
         env.reset()
         res_a = train_attacker(
             env, attacker_net, defender_frozen,
-            n_iters=attacker_iters, cfg=cfg, log_fn=log_fn,
+            n_iters=attacker_iters, cfg=cfg, log_every=log_every, log_fn=log_fn,
         )
         round_log["attacker"] = res_a["metrics"]
         all_metrics["rounds"].append(round_log)
@@ -831,17 +840,19 @@ def train_defender_centralized(
 
         total_steps += T * B
         elapsed = time.perf_counter() - t_start
-        not_att = (
-            float(np.mean([o != 1 for o in tracker["ep_outcomes"]]))
-            if tracker["ep_outcomes"]
-            else float("nan")
-        )
+        if tracker["ep_outcomes"]:
+            attacker_succ = float(np.mean([o == 1 for o in tracker["ep_outcomes"]]))
+            defender_succ = float(np.mean([o != 1 for o in tracker["ep_outcomes"]]))
+        else:
+            attacker_succ = float("nan")
+            defender_succ = float("nan")
         m = {
             "iter": it,
             "step": total_steps,
             "ep_return": float(np.mean(tracker["ep_rets"])) if tracker["ep_rets"] else float("nan"),
             "ep_length": float(np.mean(tracker["ep_lens"])) if tracker["ep_lens"] else float("nan"),
-            "defender_succ": not_att,
+            "attacker_succ": attacker_succ,
+            "defender_succ": defender_succ,
             "policy_loss": pl,
             "value_loss": vl,
             "entropy": ent,
@@ -853,7 +864,7 @@ def train_defender_centralized(
             log_fn(
                 f"  [cdef it={it:3d} step={total_steps:>7d}] "
                 f"ret={m['ep_return']:+.3f} len={m['ep_length']:5.1f} "
-                f"d_succ={m['defender_succ']:.3f} "
+                f"att_succ={m['attacker_succ']:.3f} d_succ={m['defender_succ']:.3f} "
                 f"pl={pl:+.4f} vl={vl:.4f} H={ent:+.3f} fps={m['fps']:.0f}"
             )
     return {"metrics": metrics}
@@ -882,6 +893,7 @@ def sequential_train(
     seed: int = 0,
     env_kwargs: dict | None = None,
     save_dir: Path | str | None = None,
+    log_every: int = 10,
     log_fn=print,
 ) -> dict:
     """Two-phase training with population-based opponent during phase B.
@@ -896,6 +908,8 @@ def sequential_train(
     deterministic and stochastic variants). The defender therefore sees a
     diverse opponent population at every batch step and can't over-fit to a
     single attacker.
+
+    ``log_every`` controls how often each PPO phase emits progress lines.
 
     Returns ``{attacker_net, central_defender_net, metrics, env_meta}``.
     """
@@ -933,6 +947,7 @@ def sequential_train(
         heuristic_defender,
         n_iters=attacker_warmup_iters,
         cfg=cfg,
+        log_every=log_every,
         log_fn=log_fn,
         snapshot_iters=snap_iters,
     )
@@ -986,6 +1001,7 @@ def sequential_train(
         attacker_policy=pop_policies[0],
         n_iters=central_defender_iters,
         cfg=cfg,
+        log_every=log_every,
         log_fn=log_fn,
         population=population,
     )

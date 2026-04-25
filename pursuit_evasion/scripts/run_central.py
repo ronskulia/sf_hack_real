@@ -42,6 +42,42 @@ def _setup_logger(log_path: Path) -> logging.Logger:
     return logger
 
 
+def _normalize_training_config(training: dict) -> dict:
+    """Return a central-runner training config with backward-compatible defaults."""
+    training = dict(training)
+    if "central_defender_iters" not in training:
+        defender_iters = training.get("defender_iters")
+        if defender_iters is None:
+            raise ValueError(
+                "training.central_defender_iters is required when "
+                "training.defender_iters is not provided"
+            )
+        training["central_defender_iters"] = int(defender_iters) * int(
+            training.get("n_alternations", 1)
+        )
+    training["log_every"] = int(training.get("log_every", 10))
+    return training
+
+
+class _CellProgressLogger:
+    """Write per-cell progress to train.log and stream it to stdout immediately."""
+
+    def __init__(self, log_path: Path, prefix: str) -> None:
+        self.log_path = log_path
+        self.prefix = prefix
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.log_path.open("w", encoding="utf-8", buffering=1)
+
+    def __call__(self, msg: str) -> None:
+        line = str(msg)
+        self._fh.write(line + "\n")
+        self._fh.flush()
+        print(f"{time.strftime('%H:%M:%S')} {self.prefix} {line}", flush=True)
+
+    def close(self) -> None:
+        self._fh.close()
+
+
 def _cell(args: tuple) -> dict:
     """Train one (k, σ, p) cell with sequential_train, then evaluate."""
     cell_id, k, sigma, p, training, env_kwargs, n_eval, n_anim, seed, out_root = args
@@ -67,10 +103,14 @@ def _cell(args: tuple) -> dict:
 
     cell_dir = Path(out_root) / "checkpoints" / f"k{k}_sigma{sigma}_p{p}"
     cell_dir.mkdir(parents=True, exist_ok=True)
-    log_lines: list[str] = []
+    log_path = cell_dir / "train.log"
+    progress = _CellProgressLogger(
+        log_path,
+        prefix=f"[cell {cell_id + 1} k={k} sigma={sigma:.2f} p={p:.2f}]",
+    )
 
     def log(msg: str) -> None:
-        log_lines.append(msg)
+        progress(msg)
 
     cfg = PPOConfig(
         n_steps=training["n_steps"],
@@ -102,6 +142,7 @@ def _cell(args: tuple) -> dict:
         seed=seed,
         env_kwargs=env_kwargs,
         save_dir=cell_dir,
+        log_every=training.get("log_every", 10),
         log_fn=log,
     )
     train_elapsed = time.perf_counter() - t0
@@ -167,8 +208,7 @@ def _cell(args: tuple) -> dict:
         save_animation(h, env_anim.metadata(), out_anim)
         log(f"saved anim → {out_anim.name} ({h['steps']} steps, outcome={h['outcome']})")
 
-    log_path = cell_dir / "train.log"
-    log_path.write_text("\n".join(log_lines))
+    progress.close()
 
     metrics_path = cell_dir / "metrics.json"
     metrics_path.write_text(json.dumps(_jsonable(res["metrics"]), indent=2))
@@ -254,6 +294,7 @@ def main() -> None:
     logger = _setup_logger(out_root / "run.log")
 
     config = yaml.safe_load(Path(args.config).read_text())
+    config["training"] = _normalize_training_config(config["training"])
     logger.info(f"config: {json.dumps(config)}")
 
     k_values = list(config["sweep"]["k_values"])
