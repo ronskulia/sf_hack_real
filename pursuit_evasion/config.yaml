@@ -1,7 +1,7 @@
 sweep:
   k_values: [1, 2, 3, 4, 5, 6]
-  sigma: 0.7          # defender speed ratio (single value or list)
-  p: 0.8              # kill probability (single value or list)
+  sigma: 1.0          # defender speed ratio (single value or list)
+  p: 0.7              # kill probability (single value or list)
 
 env:
   dt: 0.02

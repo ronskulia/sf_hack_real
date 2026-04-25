@@ -11,3 +11,4 @@ pursuit_evasion/outputs/animations/*.mp4
 pursuit_evasion/outputs/plots/*.png
 pursuit_evasion/outputs/checkpoints/**
 pursuit_evasion/outputs/run.log
+pursuit_evasion/outputs_smoke/

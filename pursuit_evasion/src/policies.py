@@ -8,6 +8,8 @@ observations exposed by the env.
 from __future__ import annotations
 
 import numpy as np
+import torch
+import torch.nn as nn
 
 from .env import PursuitEvasionEnv
 
@@ -201,3 +203,158 @@ class HeuristicDefender:
         direction = target_pt - defender_pos  # (B, k, 2)
         norm = np.linalg.norm(direction, axis=-1, keepdims=True)
         return (direction / np.maximum(norm, 1e-8) * self.v).astype(np.float32)
+
+
+# =============================================================================
+# Neural policies (PyTorch)
+# =============================================================================
+
+
+def _layer_init(layer: nn.Linear, std: float = np.sqrt(2.0), bias_const: float = 0.0) -> nn.Linear:
+    """CleanRL-style orthogonal init."""
+    nn.init.orthogonal_(layer.weight, std)
+    nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
+class _MLPTrunk(nn.Module):
+    """Two hidden layers, tanh activations — shared trunk for actor + critic."""
+
+    def __init__(self, in_dim: int, hidden: int = 128) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            _layer_init(nn.Linear(in_dim, hidden)),
+            nn.Tanh(),
+            _layer_init(nn.Linear(hidden, hidden)),
+            nn.Tanh(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class NeuralAttackerNet(nn.Module):
+    """Actor-critic MLP for the attacker.
+
+    Takes the flat attacker observation (4 + 4k) and outputs a 2-D Gaussian
+    over velocity (mean, learned per-dim log-std) plus a scalar value.
+    """
+
+    def __init__(self, obs_dim: int, hidden: int = 128, action_dim: int = 2) -> None:
+        super().__init__()
+        self.trunk = _MLPTrunk(obs_dim, hidden)
+        self.actor_mean = _layer_init(nn.Linear(hidden, action_dim), std=0.01)
+        self.actor_logstd = nn.Parameter(torch.zeros(1, action_dim))
+        self.critic = _layer_init(nn.Linear(hidden, 1), std=1.0)
+
+    def forward(
+        self, obs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return (action_mean, action_logstd, value). All on the same device."""
+        h = self.trunk(obs)
+        mean = self.actor_mean(h)
+        logstd = self.actor_logstd.expand_as(mean)
+        value = self.critic(h).squeeze(-1)
+        return mean, logstd, value
+
+
+class NeuralDefenderNet(nn.Module):
+    """Shared-parameter actor-critic MLP for k defenders.
+
+    Each defender's observation is unflattened into (own, attacker, teammates)
+    parts. Teammate features are mean-pooled, giving permutation invariance
+    and a consistent input size for any k. The pooled teammate vector is
+    concatenated with the own/attacker features and fed to a standard
+    actor-critic head.
+    """
+
+    def __init__(self, k: int, hidden: int = 128, action_dim: int = 2) -> None:
+        super().__init__()
+        self.k = int(k)
+        # Each "agent" piece (own / attacker / teammate-pool) is 4 floats:
+        # (pos_x, pos_y, vel_x, vel_y).
+        in_dim = 4 + 4 + 4  # own + attacker + pooled teammates
+        self.trunk = _MLPTrunk(in_dim, hidden)
+        self.actor_mean = _layer_init(nn.Linear(hidden, action_dim), std=0.01)
+        self.actor_logstd = nn.Parameter(torch.zeros(1, action_dim))
+        self.critic = _layer_init(nn.Linear(hidden, 1), std=1.0)
+
+    @staticmethod
+    def split_obs(obs: torch.Tensor, k: int) -> torch.Tensor:
+        """Flatten ``(..., 4 + 4k)`` defender obs into the trunk-ready
+        ``(..., 12)`` tensor: own (4), attacker (4), mean-pooled teammates (4)."""
+        own = obs[..., 0:4]
+        att = obs[..., 4:8]
+        # Remaining is teammate (pos+vel) flattened in groups of 4.
+        # For k = 1: zero-length teammate slot ⇒ pool to zeros.
+        if k > 1:
+            tm = obs[..., 8:].reshape(*obs.shape[:-1], k - 1, 4)
+            tm_pool = tm.mean(dim=-2)
+        else:
+            tm_pool = torch.zeros_like(own)
+        return torch.cat([own, att, tm_pool], dim=-1)
+
+    def forward(
+        self, obs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute (mean, logstd, value) from a flat per-defender observation
+        of shape ``(..., 4 + 4k)``."""
+        x = self.split_obs(obs, self.k)
+        h = self.trunk(x)
+        mean = self.actor_mean(h)
+        logstd = self.actor_logstd.expand_as(mean)
+        value = self.critic(h).squeeze(-1)
+        return mean, logstd, value
+
+
+class NeuralAttacker:
+    """Inference-only wrapper: runs ``NeuralAttackerNet`` on env state.
+
+    Uses the deterministic mean action by default (suitable for evaluation
+    and for use as a frozen opponent). For PPO collection use the network
+    directly with sampling.
+    """
+
+    def __init__(
+        self, net: NeuralAttackerNet, v_attacker: float, *, deterministic: bool = True
+    ) -> None:
+        self.net = net
+        self.v = float(v_attacker)
+        self.deterministic = bool(deterministic)
+
+    @torch.no_grad()
+    def act(self, env: PursuitEvasionEnv) -> np.ndarray:
+        a_obs, _ = env._get_obs()
+        obs_t = torch.from_numpy(a_obs)
+        mean, logstd, _ = self.net(obs_t)
+        if self.deterministic:
+            action = mean
+        else:
+            std = logstd.exp()
+            action = torch.normal(mean, std)
+        return PursuitEvasionEnv._clip_speed(action.numpy(), self.v)
+
+
+class NeuralDefender:
+    """Inference-only wrapper: runs ``NeuralDefenderNet`` on env state."""
+
+    def __init__(
+        self, net: NeuralDefenderNet, v_defender: float, *, deterministic: bool = True
+    ) -> None:
+        self.net = net
+        self.v = float(v_defender)
+        self.deterministic = bool(deterministic)
+
+    @torch.no_grad()
+    def act(self, env: PursuitEvasionEnv) -> np.ndarray:
+        _, d_obs = env._get_obs()  # (B, k, 4+4k)
+        B, k, D = d_obs.shape
+        obs_t = torch.from_numpy(d_obs.reshape(B * k, D))
+        mean, logstd, _ = self.net(obs_t)
+        if self.deterministic:
+            action = mean
+        else:
+            std = logstd.exp()
+            action = torch.normal(mean, std)
+        action = action.numpy().reshape(B, k, 2)
+        return PursuitEvasionEnv._clip_speed(action, self.v)
