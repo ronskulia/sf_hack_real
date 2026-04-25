@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.DS_Store
+*.egg-info/
+
+# Generated outputs (regenerable)
+pursuit_evasion/outputs/animations/*.mp4
+pursuit_evasion/outputs/plots/*.png
+pursuit_evasion/outputs/checkpoints/**
+pursuit_evasion/outputs/run.log
