@@ -78,8 +78,16 @@ class PursuitEvasionEnv:
         Attacker max speed.
     inner_radius, outer_radius : float
         Annulus around the target where defenders spawn.
-    shaping : float
-        Coefficient applied to per-step distance shaping reward.
+    shaping : float, optional
+        Backward-compatible coefficient applied to both teams when
+        ``attacker_shaping`` / ``defender_shaping`` are omitted.
+    attacker_shaping, defender_shaping : float, optional
+        Coefficients for dense heuristic rewards. The attacker receives
+        target-progress reward and danger/blocking penalties. The defender
+        receives chase-progress, pressure, blocking, spread, and timeout
+        rewards.
+    danger_radius : float, optional
+        Radius used for attacker danger penalty and defender pressure reward.
     seed : int
         RNG seed.
     """
@@ -99,7 +107,10 @@ class PursuitEvasionEnv:
         v_attacker: float = 1.0,
         inner_radius: float = 0.15,
         outer_radius: float = 0.35,
-        shaping: float = 0.01,
+        shaping: float | None = None,
+        attacker_shaping: float | None = None,
+        defender_shaping: float | None = None,
+        danger_radius: float | None = None,
         seed: int = 0,
     ) -> None:
         if k < 1:
@@ -120,7 +131,22 @@ class PursuitEvasionEnv:
         self.v_defender: float = self.sigma * self.v_attacker
         self.inner_radius: float = float(inner_radius)
         self.outer_radius: float = float(outer_radius)
-        self.shaping: float = float(shaping)
+        base_shaping = 0.01 if shaping is None else float(shaping)
+        self.attacker_shaping: float = (
+            base_shaping if attacker_shaping is None else float(attacker_shaping)
+        )
+        self.defender_shaping: float = (
+            base_shaping if defender_shaping is None else float(defender_shaping)
+        )
+        # Legacy name kept for older helper code and saved metadata readers.
+        self.shaping: float = base_shaping
+        default_danger_radius = max(0.15, self.capture_radius * 4.0)
+        self.danger_radius: float = max(
+            float(danger_radius) if danger_radius is not None else default_danger_radius,
+            self.capture_radius + 1e-6,
+        )
+        self.block_width: float = max(0.08, self.capture_radius * 3.0)
+        self.cluster_scale: float = max(0.10, self.capture_radius * 4.0)
 
         self.rng: np.random.Generator = np.random.default_rng(seed)
 
@@ -139,8 +165,11 @@ class PursuitEvasionEnv:
                 [np.delete(np.arange(self.k), i) for i in range(self.k)],
                 axis=0,
             )
+            self._pair_i, self._pair_j = np.triu_indices(self.k, k=1)
         else:
             self._teammate_idx = np.zeros((1, 0), dtype=np.int64)
+            self._pair_i = np.zeros(0, dtype=np.int64)
+            self._pair_j = np.zeros(0, dtype=np.int64)
 
         self.reset()
 
@@ -241,6 +270,29 @@ class PursuitEvasionEnv:
         scale = np.minimum(1.0, vmax / np.maximum(norm, 1e-8))
         return v * scale
 
+    def _block_score(self) -> np.ndarray:
+        """Return how well any defender blocks the attacker-target segment."""
+        to_target = self.target[None, :] - self.attacker_pos  # (B, 2)
+        seg_len2 = np.sum(to_target * to_target, axis=-1, keepdims=True) + 1e-8
+        rel_def = self.defender_pos - self.attacker_pos[:, None, :]  # (B, k, 2)
+        proj = np.sum(rel_def * to_target[:, None, :], axis=-1) / seg_len2
+        between = (proj > 0.0) & (proj < 1.0)
+        closest = self.attacker_pos[:, None, :] + proj[..., None] * to_target[:, None, :]
+        line_dist = np.linalg.norm(self.defender_pos - closest, axis=-1)
+        per_defender = np.exp(-((line_dist / self.block_width) ** 2)) * between
+        return per_defender.max(axis=-1).astype(np.float32)
+
+    def _cluster_penalty(self) -> np.ndarray:
+        """Return a penalty when defenders collapse onto the same location."""
+        if self.k <= 1:
+            return np.zeros(self.B, dtype=np.float32)
+        pair_delta = (
+            self.defender_pos[:, self._pair_i, :]
+            - self.defender_pos[:, self._pair_j, :]
+        )
+        pair_dist = np.linalg.norm(pair_delta, axis=-1)
+        return np.exp(-(pair_dist / self.cluster_scale)).mean(axis=-1).astype(np.float32)
+
     def step(
         self,
         attacker_action: np.ndarray,
@@ -266,6 +318,13 @@ class PursuitEvasionEnv:
         active = ~self.done  # (B,)
         active_a = active.astype(np.float32)[:, None]  # (B, 1) for broadcasting
         active_d = active.astype(np.float32)[:, None, None]  # (B, 1, 1)
+        active_f = active.astype(np.float32)
+
+        prev_target_dist = np.linalg.norm(
+            self.attacker_pos - self.target[None, :], axis=-1
+        )
+        prev_rel = self.defender_pos - self.attacker_pos[:, None, :]
+        prev_min_dist = np.linalg.norm(prev_rel, axis=-1).min(axis=-1)
 
         a_vel = self._clip_speed(
             np.asarray(attacker_action, dtype=np.float32), self.v_attacker
@@ -308,16 +367,54 @@ class PursuitEvasionEnv:
         new_done = reached | killed | timeout
 
         # ---- rewards ----
-        active_f = active.astype(np.float32)
+        target_progress = np.clip(
+            (prev_target_dist - target_dist) / max(self.v_attacker * self.dt, 1e-6),
+            -1.0,
+            1.0,
+        )
+        close_progress = np.clip(
+            (prev_min_dist - min_dist)
+            / max((self.v_attacker + self.v_defender) * self.dt, 1e-6),
+            -1.0,
+            1.0,
+        )
+        danger_span = max(self.danger_radius - self.capture_radius, 1e-6)
+        nearest_danger = np.clip(
+            (self.danger_radius - min_dist) / danger_span,
+            0.0,
+            1.0,
+        )
+        defender_pressure = np.clip(
+            (self.danger_radius - dists) / danger_span,
+            0.0,
+            1.0,
+        )
+        capture_pressure = (
+            defender_pressure.max(axis=-1) + 0.25 * defender_pressure.mean(axis=-1)
+        )
+        block_score = self._block_score()
+        cluster_penalty = self._cluster_penalty()
+
         a_reward = np.zeros(self.B, dtype=np.float32)
         a_reward = a_reward + reached.astype(np.float32) * 1.0
         a_reward = a_reward + killed.astype(np.float32) * (-1.0)
-        a_reward = a_reward - self.shaping * target_dist * active_f
+        a_reward = a_reward + timeout.astype(np.float32) * (-1.0)
+        a_reward = a_reward + self.attacker_shaping * active_f * (
+            target_progress - 0.35 * nearest_danger - 0.25 * block_score
+        )
 
         d_reward = np.zeros(self.B, dtype=np.float32)
         d_reward = d_reward + reached.astype(np.float32) * (-1.0)
         d_reward = d_reward + killed.astype(np.float32) * 1.0
-        d_reward = d_reward - self.shaping * min_dist * active_f
+        d_reward = d_reward + timeout.astype(np.float32) * 1.0
+        d_reward = d_reward + self.defender_shaping * active_f * (
+            0.75 * close_progress
+            + 0.15 * capture_pressure
+            + 0.15 * block_score
+            - 0.10 * cluster_penalty
+        )
+        a_reward = a_reward.astype(np.float32)
+        d_reward = d_reward.astype(np.float32)
 
         # ---- record outcomes & done flags ----
         self.outcome = np.where(reached, OUTCOME_ATTACKER_WIN, self.outcome)
@@ -385,4 +482,7 @@ class PursuitEvasionEnv:
             "target_pos": self.target.tolist(),
             "v_attacker": self.v_attacker,
             "v_defender": self.v_defender,
+            "attacker_shaping": self.attacker_shaping,
+            "defender_shaping": self.defender_shaping,
+            "danger_radius": self.danger_radius,
         }

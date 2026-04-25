@@ -16,8 +16,8 @@ env:
   defender_inner_radius: 0.15
   defender_outer_radius: 0.35
   attacker_danger_radius: 0.15
-  attacker_shaping: 0.01
-  defender_shaping: 0.01
+  attacker_shaping: 0.03
+  defender_shaping: 0.05
 
 training:
     attacker_warmup_iters: 120

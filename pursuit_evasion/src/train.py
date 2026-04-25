@@ -209,7 +209,9 @@ def _single_env_like(
         v_attacker=env.v_attacker,
         inner_radius=env.inner_radius,
         outer_radius=env.outer_radius,
-        shaping=env.shaping,
+        attacker_shaping=env.attacker_shaping,
+        defender_shaping=env.defender_shaping,
+        danger_radius=env.danger_radius,
         seed=seed,
     )
 

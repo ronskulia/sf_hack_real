@@ -301,7 +301,11 @@ def main() -> None:
         "v_attacker": config["env"]["v_attacker"],
         "inner_radius": config["env"]["defender_inner_radius"],
         "outer_radius": config["env"]["defender_outer_radius"],
-        "shaping": config["env"]["attacker_shaping"],  # symmetric: same coef both sides
+        "attacker_shaping": config["env"].get("attacker_shaping", 0.01),
+        "defender_shaping": config["env"].get(
+            "defender_shaping", config["env"].get("attacker_shaping", 0.01)
+        ),
+        "danger_radius": config["env"].get("attacker_danger_radius", 0.15),
     }
     seed = int(config["seed"])
     n_eval = int(config["evaluation"]["n_episodes"])
